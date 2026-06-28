@@ -1,0 +1,15 @@
+# mutmut configuration for the HansQuantSystems testing framework.
+#
+# F16 — minimal mutation testing scoped to the core research layer
+# (Candidate and CommitResult). Running mutmut on the whole codebase
+# would take too long and produce too much noise; these two modules
+# are the highest-value targets (the most "decision-dense" code paths).
+#
+# Usage:
+#   MUTMUT_RUNNING_IN_BATCH=1 mutmut run --max-children 4
+#   mutmut results
+#   mutmut apply
+#
+# Note: mutmut reads from pyproject.toml by default. This file is
+# the legacy ``setup.cfg``-style fallback in case the project ever
+# moves off pyproject.toml configuration.

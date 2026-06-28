@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "quant_lib: Honest backtesting for crypto strategies"
+abstract: >-
+  A quantitative trading backtesting framework enforcing methodological
+  discipline (no look-ahead, sealed holdout, multiple-testing correction,
+  Probabilistic Sharpe Ratio, Superior Predictive Ability test) so that
+  reported results can be defended to a skeptical reviewer.
+authors:
+  - family-names: "TODO-ACTUAL-NAME"
+    given-names: "TODO-ACTUAL-FIRSTNAME"
+version: 0.2.5
+date-released: 2026-06-27
+license: MIT
+repository-code: "https://github.com/TODO-ACTUAL-USERNAME/quant_lib"
+keywords:
+  - quantitative-finance
+  - backtesting
+  - cryptocurrency
+  - statistics
+  - reproducible-research
+  - walk-forward-analysis
+  - holdout-validation

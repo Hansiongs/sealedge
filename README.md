@@ -1,0 +1,326 @@
+# quant_lib
+
+**Honest backtesting toolkit for quantitative trading strategies.**
+
+quant_lib is a Python library for testing whether a trading strategy has a
+genuine statistical edge on historical cryptocurrency data. It enforces
+methodological discipline (no look-ahead, sealed holdouts, multiple-testing
+adjustment) so that reported results can be defended to a skeptical reviewer.
+
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-1109_passing-brightgreen.svg)](#testing)
+[![Version 0.2.5](https://img.shields.io/badge/version-0.2.5-blue.svg)](CHANGELOG.md)
+
+## Why quant_lib?
+
+Standard backtesting tools have a **look-ahead problem**: the analyst
+sees the holdout data, tunes the strategy to "work" on it, and reports
+inflated results. quant_lib solves this with:
+
+- **Cryptographically-sealed holdouts** — tampering between
+  initialization and commit is detected
+- **No look-ahead features** — every feature uses `shift(1)`
+- **Multiple-testing correction** — Bonferroni (1-indexed) + FDR (BH)
+- **PSR + ESS** instead of raw Sharpe (accounts for skew/kurtosis,
+  autocorrelation)
+- **SPA test** (Hansen 2005, Davé-corrected) for final portfolio
+  significance
+
+See [docs/methodology.md](docs/methodology.md) for the full method
+writeup.
+
+## Quick Start
+
+### 1. Use the Python API (recommended for notebooks)
+
+```python
+from quant_lib import run_explore, run_commit
+
+# Phase 0-3: explore (holdout stays sealed)
+result = run_explore("vol_compression_v1")
+print(f"SPA p-value: {result['spa_p_value']}")
+print(f"Final equity: ${result['final_equity']:,.2f}")
+
+# Phase 4: commit (irreversible, breaks seal)
+commit = run_commit("vol_compression_v1")
+print(f"PSR: {commit.psr}")
+print(f"Final equity: ${commit.final_equity:,.2f}")
+```
+
+### 2. Use the CLI (recommended for production runs)
+
+```bash
+# List registered experiments
+$ quant_exp list
+┌──────────────────┬────────────────┬────────────────┬─────────────┐
+│ Name             │ Strategy       │ Train          │ Symbols     │
+├──────────────────┼────────────────┼────────────────┼─────────────┤
+│ pullback_sniper… │ pullback_sniper │ 2020-01-01→…  │      3      │
+│ vol_compression… │ vol_compression│ 2020-01-01→…  │      3      │
+└──────────────────┴────────────────┴────────────────┴─────────────┘
+
+# Show details
+$ quant_exp show vol_compression_v1
+
+# Run OOS exploration (Phase 0-3)
+$ quant_exp explore vol_compression_v1
+
+# Run final commit (Phase 4, irreversible)
+$ quant_exp commit vol_compression_v1
+
+# Show holdout seal status
+$ quant_exp status
+```
+
+### 3. Use the low-level API (for custom pipelines)
+
+```python
+from quant_lib.audit import for_vol_compression
+from quant_lib.research.session import ResearchSession
+from quant_lib.research.candidate import Candidate
+from quant_lib.research.commit import commit_to_holdout
+
+# 1. Build hypothesis (BEFORE looking at data)
+hypothesis = for_vol_compression(
+    name="vol_breakout_v1",
+    mechanism="Volatility compression + volume breakout = momentum",
+    boundary_conditions="Fails in strong trends without pullback",
+    success_criteria="SPA p < 0.15, PF > 1.3, min 30 trades",
+)
+
+# 2. Create research session (seals holdout)
+session = ResearchSession(
+    training_period=("2020-01-01", "2024-12-31"),
+    holdout_period=("2025-01-01", "2025-06-30"),
+    symbols=["BTCUSDT", "ETHUSDT"],
+    cache_dir="./data_cache",
+)
+
+# 3. Run phases
+cand = session.create_candidate(hypothesis)
+cand.run_universe()
+cand.run_edge_testing()
+cand.run_narrowing()
+cand.mark_ready()
+
+# 4. Commit (irreversible, breaks seal)
+result = commit_to_holdout(cand, success_criteria_text="SPA p < 0.15")
+print(f"Final equity: ${result.final_equity:,.2f}")
+```
+
+## Adding a New Experiment
+
+Create a file in `quant_lib/experiments/` (auto-discovered on import):
+
+```python
+# quant_lib/experiments/my_strategy.py
+from quant_lib.audit import for_vol_compression
+from quant_lib.experiments import (
+    PeriodConfig, UniverseConfig, from_hypothesis, register,
+)
+
+_HYP = for_vol_compression(
+    name="my_strategy",
+    mechanism="...",
+    boundary_conditions="...",
+    success_criteria="...",
+)
+
+register(from_hypothesis(
+    name="my_strategy",
+    hypothesis=_HYP,
+    period=PeriodConfig(
+        train_start="2020-01-01",
+        train_end="2024-12-31",
+        # holdout_start/end: auto = [train_end - 6mo, train_end]
+    ),
+    universe=UniverseConfig(
+        symbols=["BTCUSDT", "ETHUSDT", "SOLUSDT"],
+        min_volume_usdt=50_000_000,
+        min_age_days=180,
+    ),
+))
+```
+
+Now your experiment is registered. Run it with `quant_exp explore
+my_strategy` or `from quant_lib import run_explore;
+run_explore("my_strategy")`.
+
+## Architecture
+
+quant_lib is organized in five layers, with strict dependency
+direction (arrows point downward — higher layers may import from
+lower, never the reverse):
+
+```
+┌────────────────────────────────────────────────────────────┐
+│  quant_lib/experiments/                                     │
+│                    User-defined experiment configs          │
+│                    (StrategyConfig for per-experiment risk)  │
+├────────────────────────────────────────────────────────────┤
+│  cli/              quant_exp CLI (list, show, explore,      │
+│                    commit, status)                          │
+├────────────────────────────────────────────────────────────┤
+│  research/         ResearchSession (white-box iterative) +  │
+│                    commit_to_holdout (black-box)             │
+├────────────────────────────────────────────────────────────┤
+│  audit/            Integrity primitives (Hypothesis, seal,   │
+│                    ExperimentLog)                             │
+├────────────────────────────────────────────────────────────┤
+│  tools/            Public API (fetch_klines, walk_forward,   │
+│                    spa_test, simulate_portfolio, …)          │
+├────────────────────────────────────────────────────────────┤
+│  core/             Private implementation (JIT engine, WFA,  │
+│                    features, SPA, portfolio, metrics,         │
+│                    risk_allocation, …)                        │
+├────────────────────────────────────────────────────────────┤
+│  utils/            Shared (config, git, logging)             │
+└────────────────────────────────────────────────────────────┘
+```
+
+### Layer responsibilities
+
+| Layer | Purpose |
+|---|---|
+| `quant_lib/experiments/` | User-defined experiment configurations (Python files). `StrategyConfig` dataclass enables per-experiment risk-allocation overrides. |
+| `cli/` | User-facing CLI (the `quant_exp` command) |
+| `research/` | High-level white-box + black-box research workflow. `Candidate` consumes `StrategyConfig` to drive per-fold PF-weighted risk allocation. |
+| `audit/` | Integrity primitives (immutable hypothesis, sealed holdout) |
+| `tools/` | Composable building blocks for custom pipelines |
+| `core/` | JIT-compiled engine, WFA, features, SPA, portfolio, metrics. `core/_risk_allocation.py` houses the canonical per-fold PF risk-rebalancing orchestrator. |
+| `utils/` | Shared utilities |
+
+## Methodology
+
+See [docs/methodology.md](docs/methodology.md) for the full
+methodology writeup. Highlights:
+
+- **Holdout seal (C-2)**: SHA256 of holdout data at session
+  creation, verified at commit time.
+- **Purge days**: 30-90 day gap between IS and OOS to prevent
+  boundary feature contamination.
+- **Best-params selection (Q1)**: per symbol, pick fold with
+  highest PSR across all WFA folds (consistent with live trading).
+- **Risk allocation**: per-fold decay-weighted PF (halflife 2 folds) +
+  clamp [0.5, 1.5] + rescale to preserve total risk. Implemented in
+  `core/_risk_allocation.py` and called from `Candidate.run_edge_testing`.
+  Tunable per experiment via `StrategyConfig(pf_weight_clamp_floor=..., ...)`.
+
+## Testing
+
+```bash
+# Run all 1109 tests (~140s)
+make test
+
+# Run fast tests only (skips @pytest.mark.slow)
+make test-fast
+
+# With coverage and branch coverage report
+make test-cov
+# HTML report at htmlcov/index.html
+
+# Lint (requires `pip install ruff`)
+make lint
+```
+
+**Test categories** (1109 total):
+- Unit tests (per-function)
+- Integration tests (component interaction)
+- Property-based tests (Hypothesis, ~22 invariants)
+- Reproducibility tests (same config + same seed = same output)
+- Config validation tests (invalid configs caught at construction)
+- CLI smoke tests (subprocess invocation)
+- Per-experiment `StrategyConfig` wiring tests
+- Per-fold PF-weighted risk allocation tests (`core/_risk_allocation.py`)
+- Chaos / fault-injection tests
+
+## Project Structure
+
+```
+quant_lib/
+├── audit/              # Integrity primitives
+├── cli/                # quant_exp CLI
+├── core/               # Private implementation (JIT engine)
+├── research/           # ResearchSession, Candidate, commit
+├── experiments/        # (within quant_lib/) User-defined experiment configs
+├── tests/              # 1109 tests
+├── tools/              # Public composable API
+├── utils/              # Shared utilities
+├── docs/
+│   └── methodology.md  # Paper-grade methodology writeup
+├── CHANGELOG.md
+├── CITATION.cff
+├── LICENSE              # MIT
+├── Makefile
+├── pyproject.toml
+└── README.md
+```
+
+## Documentation
+
+- **[docs/methodology.md](docs/methodology.md)** — Paper-grade
+  writeup (formulas, references, justifications).
+- **[CHANGELOG.md](CHANGELOG.md)** — Version history.
+
+## Status
+
+This is a research-quality framework. Critical paths have high test
+coverage (1109 tests, including property-based, reproducibility, and
+config validation). Branch coverage is tracked via `--cov-branch`
+(enforced in `make test-cov`). The core engine (`core/_engine.py`)
+is exercised by integration tests but the JIT-compiled body is
+opaque to coverage tooling.
+
+**Known limitations:**
+- Engine line coverage is not measurable (Numba @njit compiles to
+  native code). Test behaviours, not lines.
+- `core/_data.py` requires network access to Binance Vision
+  (mocked in tests)
+
+## Installation
+
+```bash
+# Clone the repo
+git clone https://github.com/TODO-ACTUAL-USERNAME/quant_lib.git
+cd quant_lib
+
+# Install with dev dependencies
+make install-dev
+
+# Or with pip
+pip install -e ".[dev]"
+```
+
+## Citation
+
+If you use quant_lib in a paper, please cite it as:
+
+```bibtex
+@software{quant_lib,
+  author = {quant_lib contributors},
+  title = {quant_lib: Honest backtesting for crypto strategies},
+  version = {0.2.5},
+  year = {2026},
+  url = {https://github.com/TODO-ACTUAL-USERNAME/quant_lib}
+}
+```
+
+Or use the [`CITATION.cff`](CITATION.cff) file for automatic
+citation generation.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+## Contributing
+
+This is currently a personal research project. If you find a bug or
+have a suggestion, please open an issue.
+
+## Acknowledgments
+
+- Bailey & Lopez de Prado for the PSR framework
+- Hansen for the SPA test
+- Benjamini & Hochberg for the FDR correction
+- The Optuna team for the hyperparameter optimization framework
