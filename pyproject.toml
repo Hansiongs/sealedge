@@ -117,7 +117,7 @@ skip_empty = true
 # return on investment. See mutmut.toml for usage instructions.
 [tool.mutmut]
 runner = "mutmut.trampoline"
-tests_dir = "tests/"
+pytest_add_cli_args_test_selection = ["tests/"]
 source_paths = ["quant_lib/"]
 mutate = [
     "quant_lib/research/candidate.py",
