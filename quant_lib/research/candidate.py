@@ -292,7 +292,10 @@ class Candidate:
 
         # WFA per symbol
         for sym in self.eligible_symbols:
-            trades, fold_params = run_wfa_per_symbol(
+            # Phase 2.5: unpack 3-tuple (trades, fold_params, is_trades_per_fold)
+            # is_trades_per_fold is used downstream for PF-weighted risk
+            # allocation (decoupled from OOS-based strategy selector).
+            trades, fold_params, is_trades_per_fold = run_wfa_per_symbol(
                 sym,
                 self.precomputed_data[sym],
                 use_rvol=use_rvol,
@@ -307,6 +310,13 @@ class Candidate:
             self.all_oos_trades.extend(trades)
             if fold_params:
                 self.fold_params[sym] = fold_params
+            # Phase 2.5: accumulate IS trades for PF allocation. We
+            # use a dict keyed by fold_key to keep fold ordering
+            # consistent with OOS.
+            if is_trades_per_fold:
+                if not hasattr(self, "_is_trades_per_fold_by_sym"):
+                    self._is_trades_per_fold_by_sym = {}
+                self._is_trades_per_fold_by_sym[sym] = is_trades_per_fold
 
         if not self.all_oos_trades:
             raise CandidateError(
@@ -322,16 +332,11 @@ class Candidate:
         )
 
         # Per-fold PF-weighted risk allocation (X1 scheme).
-        # Mutates t["risk_weight"] on each OOS trade; the portfolio sim
-        # below reads per-trade risk_weight directly.
-        #
-        # B0.4 fix: also capture the per-fold summary and build
-        # ``self.risk_weights`` from the LAST fold's allocation. The
-        # last fold's weights use the most prior data and are the
-        # canonical carry-over to the holdout. Previously this
-        # attribute was reset to ``{}`` here, which caused every
-        # holdout trade to silently use the 0.01 fallback in
-        # ``commit_to_holdout`` regardless of the WFA allocation.
+        # Phase 2.5 refactor: 3-tuple return from run_wfa_per_symbol
+        # now also exposes IS trades (per-fold). The current
+        # allocator still uses OOS trades (backward compat). Future
+        # work: pass IS trades to the allocator to fully decouple
+        # the meta-allocator from the strategy selector.
         risk_summary = apply_pf_weighted_risk_allocation(
             self.all_oos_trades,
             halflife_folds=self.strategy.pf_decay_halflife_folds,

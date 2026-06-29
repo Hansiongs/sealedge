@@ -257,7 +257,7 @@ class TestRunWfaPerSymbol:
         """Small data: should skip folds due to insufficient size."""
         df = _make_prepped_df(n=200)  # way too small for 12+ month IS
         with patch_wfa_static():
-            trades, params = run_wfa_per_symbol(
+            trades, params, is_trades = run_wfa_per_symbol(
                 "BTCUSDT", df, use_rvol=True, use_ema=True,
                 verbose=False, strategy_type=0,
             )
@@ -271,7 +271,7 @@ class TestRunWfaPerSymbol:
         # (4320 hours). Use patched STATIC to lower the bar.
         df = _make_prepped_df(n=5000)
         with patch_wfa_static(min_train_months=3, trials=3):
-            trades, params = run_wfa_per_symbol(
+            trades, params, is_trades = run_wfa_per_symbol(
                 "BTCUSDT", df, use_rvol=True, use_ema=True,
                 verbose=False, strategy_type=0,
             )
@@ -292,7 +292,7 @@ class TestRunWfaPerSymbol:
         # large enough for 2 folds.
         df = _make_prepped_df(n=8000)  # 8000/24 ~= 333 days ~= ~11 months
         with patch_wfa_static(min_train_months=3, trials=2, test_months=1):
-            trades, params = run_wfa_per_symbol(
+            trades, params, is_trades = run_wfa_per_symbol(
                 "BTCUSDT", df, use_rvol=True, use_ema=True,
                 verbose=False, strategy_type=0,
             )
@@ -304,7 +304,7 @@ class TestRunWfaPerSymbol:
         even when no folds produce trades."""
         df = _make_prepped_df(n=300)  # very small -> all folds skipped
         with patch_wfa_static(min_train_months=2, trials=2):
-            trades, params = run_wfa_per_symbol(
+            trades, params, is_trades = run_wfa_per_symbol(
                 "BTCUSDT", df, use_rvol=True, use_ema=True,
                 verbose=False, strategy_type=0,
             )
@@ -315,7 +315,7 @@ class TestRunWfaPerSymbol:
         """strategy_type=1 path: RSI-specific Optuna suggestions."""
         df = _make_prepped_df(n=5000)
         with patch_wfa_static(min_train_months=3, trials=2):
-            trades, params = run_wfa_per_symbol(
+            trades, params, is_trades = run_wfa_per_symbol(
                 "BTCUSDT", df, use_rvol=True, use_ema=True,
                 verbose=False, strategy_type=1,
             )
@@ -338,7 +338,7 @@ class TestRunWfaPerSymbol:
         gap_start = 3000
         df.loc[gap_start, "time"] = df.loc[gap_start, "time"] + pd.Timedelta(hours=72)
         with patch_wfa_static(min_train_months=3, trials=2):
-            trades, params = run_wfa_per_symbol(
+            trades, params, is_trades = run_wfa_per_symbol(
                 "BTCUSDT", df, use_rvol=True, use_ema=True,
                 verbose=False, strategy_type=0,
             )

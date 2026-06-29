@@ -271,13 +271,139 @@ def _adaptive_trials(n_is_months: int, prev_best_params: dict | None) -> int:
         return max(50, int(base * (0.50 if ada_prior else 0.70)))
 
 
+def _run_engine_on_data(
+    df,
+    best_p: dict,
+    strategy_type: int,
+    fold_seed: int,
+    use_rvol: int,
+    use_ema: int,
+    allow_long: int,
+    allow_short: int,
+    fold_key: str,
+    atr_inv_fold: float,
+    symbol: str,
+) -> list[dict]:
+    """Phase 2.5: run fast_trade_loop on a given DataFrame with
+    the winning Optuna params, returning a list of trade dicts.
+
+    Used to produce IS trades for the PF-weighted risk allocator
+    (decoupling it from the OOS trades used by the strategy
+    selector and SPA test). The structure of returned trade dicts
+    matches the OOS trades: same keys, fold_key identifies the
+    fold. Caller decides which subset of fields to use.
+    """
+    import numpy as np
+    rng_is = np.random.default_rng(fold_seed ^ 0xBEEF)
+    random_draws_is = rng_is.random(size=len(df) * 2).astype(np.float64)
+    rsi_14_is = df["rsi_14"].values if "rsi_14" in df.columns else np.zeros(len(df), dtype=np.float64)
+    bullish_rev_is = df["bullish_reversal"].values if "bullish_reversal" in df.columns else np.zeros(len(df), dtype=np.int32)
+    bearish_rev_is = df["bearish_reversal"].values if "bearish_reversal" in df.columns else np.zeros(len(df), dtype=np.int32)
+
+    (
+        pnl, idx_en, idx_ex, t_dir,
+        m_trend, cb_vol, en_pr, ex_pr, sl_pcts, trend_mults,
+    ) = fast_trade_loop(
+        df["open"].values,
+        df["high"].values,
+        df["low"].values,
+        df["close"].values,
+        df["hh_20"].values,
+        df["ll_20"].values,
+        df["ema_200"].values,
+        rsi_14_is,
+        bullish_rev_is,
+        bearish_rev_is,
+        df["vol_pct_rank"].values,
+        df["rvol"].values,
+        df["atr"].values,
+        df["funding_rate"].values,
+        df["macro_vol"].values,
+        df["macro_trend"].values,
+        df["is_weekend"].values,
+        df["is_funding_hour"].values,
+        strategy_type,
+        best_p.get("vol_pct_thresh", 0.20),
+        DEFAULTS["fixed_rvol_thresh"],
+        best_p.get("pullback_bars", 5),
+        best_p.get("trail_atr", 3.0),
+        best_p.get("sl_mult", 1.5),
+        DEFAULTS["bailout_bars"],
+        0,
+        STATIC["fee_taker"],
+        use_rvol,
+        use_ema,
+        allow_long,
+        allow_short,
+        best_p.get("rsi_oversold", 30.0),
+        best_p.get("rsi_overbought", 70.0),
+        DEFAULTS["weekend_liquidity_penalty"],
+        DEFAULTS["stress_test_multiplier"],
+        random_draws_is,
+        DEFAULTS["trend_aligned_risk_mult"],
+        DEFAULTS["trend_counter_risk_mult"],
+    )
+
+    if len(pnl) == 0:
+        return []
+    en_times = df["time"].iloc[idx_en].tolist()
+    ex_times = df["time"].iloc[idx_ex].tolist()
+    trades = []
+    for e_time, x_time, r, d, e_pr, x_pr, m_t, cb_v, sl_p, t_mult in zip(
+        en_times, ex_times, pnl, t_dir, en_pr, ex_pr,
+        m_trend, cb_vol, sl_pcts, trend_mults,
+    ):
+        trades.append({
+            "entry_time": e_time,
+            "exit_time": x_time,
+            "symbol": symbol,
+            "r_net": r,
+            "entry_price": e_pr,
+            "exit_price": x_pr,
+            "trade_dir": d,
+            "sl_pct": sl_p,
+            "sl_mult": best_p.get("sl_mult", 1.5),
+            "trail_atr": best_p.get("trail_atr", 3.0),
+            "m_trend": m_t,
+            "macro_vol": cb_v,
+            "risk_weight": DEFAULTS["default_risk_per_pair"],
+            "trend_risk_mult": t_mult,
+            "atr_inv": atr_inv_fold,
+            "fold_key": fold_key,
+        })
+    return trades
+
+
 def run_wfa_per_symbol(
     symbol, precomputed_df, use_rvol, use_ema, verbose=True, reg_lambda=0.05,
     strategy_type=0, allow_long=1, allow_short=1, search_space=None,
+    return_is_trades: bool = True,
 ):
-    """Run walk-forward optimization for one symbol, collecting OOS trades."""
+    """Run walk-forward optimization for one symbol, collecting OOS trades.
+
+    Phase 2.5: When ``return_is_trades=True`` (default), also returns
+    a list of per-fold IS trades (one list of trade dicts per fold,
+    in the same order as the OOS trades). These IS trades are produced
+    by running fast_trade_loop on the IS data with the winning Optuna
+    params. They are intended for the PF-weighted risk allocator only,
+    so the meta-allocator is decoupled from the strategy selector
+    (avoids double-use of OOS trades for both SPA and risk weighting).
+
+    Returns
+    -------
+    tuple
+        (local_trades, fold_params_list, is_trades_per_fold) when
+        ``return_is_trades=True`` (default), else
+        (local_trades, fold_params_list) for backward compat.
+
+        - local_trades: list of OOS trade dicts
+        - fold_params_list: list of fold metadata dicts
+        - is_trades_per_fold: list of lists (one per fold) of IS trade
+          dicts, or [] when ``return_is_trades=False``
+    """
     local_trades = []
     fold_params_list = []
+    is_trades_per_fold: list[list[dict]] = []  # Phase 2.5
     is_avg = DEFAULTS["default_expected_trades_per_year"]
     unique_months = precomputed_df["time"].dt.to_period("M").sort_values().unique()
     min_train_months = DEFAULTS["wfa_min_train_months"]
@@ -541,6 +667,29 @@ def run_wfa_per_symbol(
                     "fold_key": fold_key,
                 })
 
+            # Phase 2.5 (Option A): also run the engine on the IS
+            # data with the same winning Optuna params, so the
+            # PF-weighted risk allocation can be computed on
+            # IN-SAMPLE trades (which the meta-allocator hasn't
+            # seen). This decouples the meta-allocator (IS-based)
+            # from the strategy selector (OOS-based), avoiding
+            # double-use of OOS trades for both SPA p-value and
+            # risk weighting.
+            if return_is_trades:
+                is_trades_per_fold.append(_run_engine_on_data(
+                    df=df_is,
+                    best_p=best_p,
+                    strategy_type=strategy_type,
+                    fold_seed=fold_seed,
+                    use_rvol=use_rvol,
+                    use_ema=use_ema,
+                    allow_long=allow_long,
+                    allow_short=allow_short,
+                    fold_key=fold_key,
+                    atr_inv_fold=atr_inv_fold,
+                    symbol=symbol,
+                ))
+
             if verbose:
                 console.print(
                     f"[bold green]✓ {symbol} fold {fold_num}/{total_folds}[/] "
@@ -558,5 +707,12 @@ def run_wfa_per_symbol(
                 f"OOS:{oos_months[0].start_time.strftime('%b %y')}"
                 f"-{oos_months[-1].end_time.strftime('%b %y')} | no trades"
             )
+            console.print(
+                f"[bold green]✓ {symbol} fold {fold_num}/{total_folds}[/] "
+                f"WFA | IS:{is_months[0].start_time.strftime('%b %y')}"
+                f"-{is_months[-1].end_time.strftime('%b %y')} "
+                f"OOS:{oos_months[0].start_time.strftime('%b %y')}"
+                f"-{oos_months[-1].end_time.strftime('%b %y')} | no trades"
+            )
 
-    return local_trades, fold_params_list
+    return local_trades, fold_params_list, is_trades_per_fold
