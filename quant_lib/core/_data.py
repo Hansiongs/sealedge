@@ -10,6 +10,7 @@ CSV files are stored in DATA_DIR subdirectory.
 """
 
 import os
+import re
 import tempfile
 import requests
 import zipfile
@@ -20,6 +21,35 @@ import pandas as pd
 from requests import Response
 
 from quant_lib.core._logging import log
+
+
+# Phase 3.3: Input validation for cache paths. Symbols must match
+# Binance's naming convention (uppercase, alphanumeric, up to 20
+# chars, ending in USDT). Intervals must be one of the standard
+# Binance kline intervals. Rejecting bad inputs early prevents
+# path traversal and creates cleaner error messages.
+_VALID_SYMBOL_RE = re.compile(r"^[A-Z0-9]{2,20}USDT$")
+_VALID_INTERVALS = frozenset({"1m", "5m", "15m", "1h", "4h", "1d"})
+
+
+def _validate_symbol(symbol: str) -> str:
+    """Validate symbol format. Raises ValueError on invalid input."""
+    if not isinstance(symbol, str) or not _VALID_SYMBOL_RE.match(symbol):
+        raise ValueError(
+            f"Invalid symbol {symbol!r}. Must match pattern "
+            f"[A-Z0-9]{{2,20}}USDT (e.g., BTCUSDT, ETHUSDT)."
+        )
+    return symbol
+
+
+def _validate_interval(interval: str) -> str:
+    """Validate interval format. Raises ValueError on invalid input."""
+    if interval not in _VALID_INTERVALS:
+        raise ValueError(
+            f"Invalid interval {interval!r}. "
+            f"Must be one of: {sorted(_VALID_INTERVALS)}."
+        )
+    return interval
 
 # All cached CSV files go here (auto-created)
 DATA_DIR = "data_cache"
@@ -41,12 +71,58 @@ def _data_path(filename: str) -> str:
     return os.path.join(DATA_DIR, filename)
 
 
-def fetch_with_retry(url: str, timeout: int = 15, max_retries: int = 3) -> Optional[Response]:
-    """Helper for HTTP fetch with retry logic and proper logging."""
+# Maximum response body size (500 MB). A single month of 1H klines
+# is ~2 MB compressed, ~10 MB uncompressed. 500 MB is a generous
+# safety cap that will never be hit by legitimate data but prevents
+# a malicious or compromised server from OOM'ing the process.
+_MAX_RESPONSE_BYTES = 500 * 1024 * 1024
+
+
+def fetch_with_retry(
+    url: str,
+    timeout: int = 15,
+    max_retries: int = 3,
+    max_size: int = _MAX_RESPONSE_BYTES,
+) -> Optional[Response]:
+    """Helper for HTTP fetch with retry logic, proper logging, and size cap.
+
+    Phase 3.4: Uses ``stream=True`` + ``iter_content`` with a hard
+    size cap (default 500 MB) to prevent unbounded response bodies
+    from a malicious or compromised server. The cap is well above
+    any legitimate Binance Vision response (a full year of 1H klines
+    is ~120 MB uncompressed).
+
+    Parameters
+    ----------
+    url : str
+        The URL to fetch.
+    timeout : int
+        Per-attempt timeout in seconds. Default 15.
+    max_retries : int
+        Number of retries on transient failures. Default 3.
+    max_size : int
+        Maximum response body in bytes. Default 500 MB.
+
+    Returns
+    -------
+    Response or None
+        The response object with ``._content`` populated, or None on
+        transient failure or size cap exceeded.
+    """
     for attempt in range(max_retries):
         try:
-            res = requests.get(url, timeout=timeout)
+            res = requests.get(url, timeout=timeout, stream=True)
             res.raise_for_status()
+            # Stream content with size cap
+            content = bytearray()
+            for chunk in res.iter_content(chunk_size=1024 * 1024):
+                content.extend(chunk)
+                if len(content) > max_size:
+                    log.error(
+                        f"Response too large (>{max_size:,} bytes): {url}"
+                    )
+                    return None
+            res._content = bytes(content)
             return res
         except requests.exceptions.Timeout:
             log.warning(f"Timeout on attempt {attempt+1}/{max_retries}: {url}")
@@ -65,6 +141,8 @@ def fetch_with_retry(url: str, timeout: int = 15, max_retries: int = 3) -> Optio
 
 
 def ensure_data_exists(symbol: str, interval: str, start_date: str, end_date: str) -> str:
+    _validate_symbol(symbol)
+    _validate_interval(interval)
     _ensure_data_dir()
     start_dt, end_dt = pd.to_datetime(start_date), pd.to_datetime(end_date)
     output_filename = f"{symbol}_{interval}_MASTER.csv"
@@ -179,6 +257,7 @@ def ensure_data_exists(symbol: str, interval: str, start_date: str, end_date: st
 
 
 def ensure_funding_exists(symbol: str, start_date: str, end_date: str) -> Optional[str]:
+    _validate_symbol(symbol)
     _ensure_data_dir()
     start_dt, end_dt = pd.to_datetime(start_date), pd.to_datetime(end_date)
     output_filename = f"{symbol}_FUNDING_MASTER.csv"

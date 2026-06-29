@@ -6,12 +6,40 @@ template, and optionally writes a ``.env`` file with the required
 """
 from __future__ import annotations
 
+import os
 import secrets
+import tempfile
 from pathlib import Path
 
 import typer
 
 from quant_lib.core._logging import console
+
+# ── Atomic file write helper ──────────────────────────────────────────
+# Phase 3.5: crash-safe file writes for scaffold files. A crash
+# mid-write should not leave a half-written experiment file or .env
+# that is indistinguishable from a complete one.
+
+
+def _atomic_file_write(path: Path, content: str, encoding: str = "utf-8") -> None:
+    """Write ``content`` to ``path`` atomically via tempfile + os.replace.
+
+    A crash mid-write leaves the target file in its original state
+    (or creates no file at all). Silent on success.
+    """
+    dir_name = str(path.parent) if path.parent else "."
+    fd, tmp_path = tempfile.mkstemp(
+        dir=dir_name, prefix=f".{path.name}_", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "w", encoding=encoding) as f:
+            f.write(content)
+        os.replace(tmp_path, str(path))
+    except Exception:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        raise
+
 
 # ── Templates ────────────────────────────────────────────────────────────
 # Each template is a key phrase (strategy type) → (filename, file content).
@@ -219,7 +247,7 @@ def init(
         )
         return
 
-    exp_file.write_text(content, encoding="utf-8")
+    _atomic_file_write(exp_file, content, encoding="utf-8")
     console.print(f"[green]Created[/green] {exp_file}")
 
     # Write .env template
@@ -233,7 +261,7 @@ def init(
             env_content = _ENV_TEMPLATE.format(
                 secret_key="QUANT_LIB_HMAC_SECRET",
             ).replace("=\n", f"={secrets.token_urlsafe(32)}\n")
-            env_file.write_text(env_content, encoding="utf-8")
+            _atomic_file_write(env_file, env_content, encoding="utf-8")
             console.print(
                 f"[green]Created[/green] {env_file} "
                 f"(with random HMAC secret)"

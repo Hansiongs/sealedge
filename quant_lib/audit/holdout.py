@@ -473,15 +473,33 @@ class HoldoutSet:
         return self._seal.seal_file is not None and os.path.exists(self._seal.seal_file)
 
     def _save_seal(self) -> None:
-        """Atomically write the seal to disk with a fresh HMAC signature."""
+        """Atomically write the seal to disk with a fresh HMAC signature.
+
+        Phase 3.2: Atomic write via tempfile + os.replace. A crash
+        mid-write leaves the original seal intact (the old seal's
+        signature remains valid against the old state). Previously
+        used direct ``open()`` which could produce a half-written
+        JSON on crash, causing verify() to fail despite no actual
+        tampering.
+        """
         if self._seal.seal_file:
-            # Build the unsigned payload, compute the signature,
-            # then write both atomically.
             payload = self._seal.to_dict()
             payload["signature"] = compute_seal_signature(payload)
             self._seal.signature = payload["signature"]
-            with open(self._seal.seal_file, "w") as f:
-                json.dump(payload, f, indent=2)
+
+            import tempfile
+            dir_name = os.path.dirname(self._seal.seal_file) or "."
+            fd, tmp_path = tempfile.mkstemp(
+                dir=dir_name, prefix=".seal_", suffix=".tmp"
+            )
+            try:
+                with os.fdopen(fd, "w") as f:
+                    json.dump(payload, f, indent=2)
+                os.replace(tmp_path, self._seal.seal_file)
+            except Exception:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+                raise
 
 
 __all__ = [

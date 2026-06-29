@@ -9,6 +9,7 @@ Framework principles:
 
 import json
 import os
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional, Literal
@@ -226,7 +227,15 @@ class ExperimentLog:
         ]
 
     def _save_to_disk(self) -> None:
-        """Persist journal to file if journal_path is set (P3-C2 fix)."""
+        """Persist journal to file if journal_path is set (P3-C2 fix).
+
+        Phase 3.1: Atomic write via tempfile + os.replace. A crash
+        mid-write leaves the original file intact (defense-in-depth
+        for audit trail integrity — the framework's central value
+        proposition prevents silent loss of decision history).
+        Previously used direct ``open()`` which could produce a
+        half-written JSON file on crash, losing the audit trail.
+        """
         if not self.journal_path:
             return
         os.makedirs(os.path.dirname(self.journal_path) or ".", exist_ok=True)
@@ -235,5 +244,17 @@ class ExperimentLog:
             "initial_alpha": self.initial_alpha,
             "entries": self.to_dict_list(),
         }
-        with open(self.journal_path, "w") as f:
-            json.dump(data, f, indent=2)
+        dir_name = os.path.dirname(self.journal_path) or "."
+        fd, tmp_path = tempfile.mkstemp(
+            dir=dir_name, prefix=".journal_", suffix=".tmp"
+        )
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(data, f, indent=2)
+            os.replace(tmp_path, self.journal_path)
+        except Exception:
+            # Cleanup temp file on any failure so we don't leave .journal_*.tmp
+            # files littered around after a crash.
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            raise
