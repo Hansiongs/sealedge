@@ -26,7 +26,7 @@ import pandas as pd
 from quant_lib.core._engine import fast_trade_loop, STRATEGY_PULLBACK_SNIPER
 from quant_lib.core._config import STATIC, DEFAULTS
 from quant_lib.core._metrics import build_daily_matrices
-from quant_lib.core._testing import prob_sharpe_ratio
+from quant_lib.core._testing import prob_sharpe_ratio, deflated_sharpe_ratio
 from quant_lib.core._portfolio import simulate_full_portfolio
 from quant_lib.research.exceptions import (
     CommitError,
@@ -101,6 +101,14 @@ class CommitResult:
 
     # User-provided criteria
     success_criteria_text: str = ""
+
+    # Multiple-testing adjustment (Phase 2.1: Bailey & López de Prado 2014).
+    # The deflated PSR adjusts the single-trial PSR for the family of
+    # Optuna trials that produced the winning params. A deflated_psr
+    # > 0.95 means the strategy's edge is likely real, not just the best
+    # of N trials under the null. NaN when n_trials < 2.
+    deflated_psr: float = float("nan")
+    n_trials_in_deflated: int = 0
 
 
 def commit_to_holdout(
@@ -208,10 +216,15 @@ def commit_to_holdout(
     # Re-compute hash from cached raw OHLCV (and BTC extended if any).
     # Phase 2.2: BTC extended is now part of the seal -- if tampered
     # with between init and commit, the hash mismatch is detected here.
+    # Phase 2.3: funding data is also part of the seal. If tampered,
+    # mismatch is detected.
     cached_data = session._holdout_data_for_hash
     cached_btc_extended = session._btc_extended_for_features
+    cached_funding = getattr(session, "_holdout_funding_for_hash", None)
     recomputed_hash = _compute_holdout_data_hash(
-        cached_data, btc_extended=cached_btc_extended,
+        cached_data,
+        btc_extended=cached_btc_extended,
+        funding_data=cached_funding,
     )
     if recomputed_hash != session._holdout_hash:
         raise SealVerificationFailed(
@@ -251,6 +264,11 @@ def commit_to_holdout(
             df_funding_raw=fund,
             max_time=pd.Timestamp(hold_end),
             strategy_type=hypothesis.strategy_type,
+            # Phase 2.2: Isolate macro_trend from holdout prices to
+            # prevent state-persistence leakage. The trend signal
+            # at the start of the holdout is the LAST value of the
+            # pre-holdout EMA, forward-filled into the holdout.
+            btc_holdout_start=pd.Timestamp(hold_start),
         )
 
     # ── Run frozen-params trade loop (no Optuna) ──
@@ -427,7 +445,9 @@ def commit_to_holdout(
     # verify() would also catch it (defense in depth).
     from quant_lib.research.session import _compute_holdout_data_hash
     seal_hash_after = _compute_holdout_data_hash(
-        cached_data, btc_extended=cached_btc_extended,
+        cached_data,
+        btc_extended=cached_btc_extended,
+        funding_data=cached_funding,  # Phase 2.3
     )
 
     # Use the public commit_break API (no private attribute access).
@@ -517,6 +537,64 @@ def commit_to_holdout(
         ess = 0.0
         avg_bars = 0.0
 
+    # ── Phase 2.1: Deflated PSR (Bailey & López de Prado 2014) ──
+    # Adjusts the single-trial PSR for the family of Optuna trials
+    # that produced the winning params. The "family" includes all
+    # Optuna trials across symbols × folds during the WFA phase.
+    # Real family size:
+    #   n_symbols × n_folds × n_optuna_trials_per_fold
+    # This is the missing piece between PSR (single-trial) and the
+    # existing Bonferroni correction (which counts only n_commits).
+    if n_trades >= 5 and psr_ess_val == psr_ess_val:  # n_trades > 0 and PSR not NaN
+        # Approximate the per-trial Sharpe from the observed R-multiples.
+        # Note: this is the same Sharpe used internally by PSR (skewness-
+        # adjusted), not the raw per-trade Sharpe. We invert PSR via
+        # the inverse normal CDF to get the "effective z-score" then
+        # multiply by the SR standard deviation to recover the
+        # effective SR. For a simpler approach, we use the observed
+        # raw Sharpe (avg_r / std_r) as the input -- it is the
+        # quantity Bailey & López de Prado 2014 explicitly use.
+        # Use the raw per-trade SR as observed_sharpe input. The PSR
+        # formula already adjusts for skew/kurt internally, but the
+        # deflated PSR uses the observed SR directly per the
+        # original Bailey & López de Prado paper.
+        if n_trades > 1:
+            # Realistic family of Optuna trials: symbols × folds ×
+            # trials_per_fold. We compute this from the actual fold
+            # data on the candidate.
+            fold_counts = (
+                sum(len(fps) for fps in candidate.fold_params.values())
+                if hasattr(candidate, "fold_params") and candidate.fold_params
+                else 0
+            )
+            # Each fold runs DEFAULTS["wfa_trials_per_fold"] trials.
+            n_trials_deflated = max(
+                fold_counts * DEFAULTS.get("wfa_trials_per_fold", 80),
+                1,
+            )
+            # Map observed PSR back to an effective SR for the
+            # deflated formula. We use the unadjusted per-trade
+            # Sharpe (avg_r / std_r) as the input -- the PSR
+            # already encoded skew/kurt, but the deflated formula
+            # uses the SR as-is.
+            observed_sharpe_for_deflated = sharpe  # = avg_r / std_r
+            deflated_psr_val = deflated_sharpe_ratio(
+                observed_sharpe=observed_sharpe_for_deflated,
+                n_trials=n_trials_deflated,
+                returns_skewness=skew_val,
+                returns_excess_kurtosis=kurt_val,  # fisher=True is excess
+                benchmark_sharpe=0.0,
+                n_obs_per_trial=n_trades,
+            )
+            n_trials_in_deflated = n_trials_deflated
+        else:
+            deflated_psr_val = float("nan")
+            n_trials_in_deflated = 0
+    else:
+        # Zero trades: no PSR to deflate.
+        deflated_psr_val = float("nan")
+        n_trials_in_deflated = 0
+
     # By-symbol stats
     by_symbol = {}
     for sym in narrowed_syms:
@@ -586,6 +664,8 @@ def commit_to_holdout(
         skew=skew_val,
         kurtosis=kurt_val,
         ess=ess,
+        deflated_psr=deflated_psr_val,
+        n_trials_in_deflated=n_trials_in_deflated,
         bonferroni_alpha=bonf_alpha,
         fdr_alpha=fdr_alpha,
         by_symbol_stats=by_symbol,

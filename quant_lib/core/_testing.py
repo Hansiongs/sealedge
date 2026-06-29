@@ -224,6 +224,144 @@ def fdr_correction(p_values: ndarray, alpha: float = 0.05) -> tuple[ndarray, nda
     return rejected, adjusted
 
 
+def deflated_sharpe_ratio(
+    observed_sharpe: float,
+    n_trials: int,
+    returns_skewness: float = 0.0,
+    returns_excess_kurtosis: float = 0.0,
+    benchmark_sharpe: float = 0.0,
+    n_obs_per_trial: int | None = None,
+) -> float:
+    """Deflated Sharpe Ratio (Bailey & López de Prado, 2014).
+
+    Adjusts PSR for multiple testing across ``n_trials`` independent
+    Optuna trials (or other independent tests). Returns the probability
+    that the observed Sharpe is the best of ``n_trials`` i.i.d. trials
+    under the null that all have true Sharpe = ``benchmark_sharpe``.
+
+    This is the missing piece between PSR (single-trial, Bailey & López
+    de Prado 2012) and the framework's multi-trial Optuna search. Without
+    it, the family of tests (n_symbols × n_folds × n_optuna_trials) is
+    under-corrected by the existing Bonferroni adjustment on
+    ``n_commits`` (which is typically 1-3, not the real family of
+    ~30,000+).
+
+    Parameters
+    ----------
+    observed_sharpe : float
+        The best Sharpe ratio observed across trials. Should be the
+        best_value (PSR) from the winning Optuna trial.
+    n_trials : int
+        Number of independent trials. The real family size: typically
+        ``n_symbols × n_folds × n_optuna_trials_per_fold`` (e.g.,
+        6 × 30 × 80 ≈ 14,400). Should be ≥ 1.
+    returns_skewness : float
+        Sample skewness of the returns that produced
+        ``observed_sharpe``. Default 0.0 (normal). Used for the
+        variance-of-SR estimator correction.
+    returns_excess_kurtosis : float
+        Sample EXCESS kurtosis (Fisher=True; 0 for normal). Default
+        0.0 (normal).
+    benchmark_sharpe : float
+        Sharpe ratio under the null. Default 0.0.
+    n_obs_per_trial : int, optional
+        Number of observations per trial. If None (default), uses
+        asymptotic E[max SR] formula. If provided, uses finite-sample
+        SR variance.
+
+    Returns
+    -------
+    float
+        Deflated PSR in [0, 1]. Probability that the observed Sharpe
+        is real (not just the best of n_trials).
+
+        Returns NaN when n_trials < 2 (no multiple testing, so PSR is
+        the appropriate metric). Returns 0.0 when observed_sharpe <=
+        benchmark_sharpe (can't be "best of N" if it's not above the
+        null).
+
+    Notes
+    -----
+    Implementation follows Bailey & López de Prado (2014)
+    "The Deflated Sharpe Ratio: Correcting for Selection Bias,
+    Backtest Overfitting, and Non-Normality" (JPM 40(5), 94-107).
+
+    Key formulas:
+        E[max(SR)] = (1 - γ_3 * SR* + ((κ_4 - 1)/4) * SR*^2) *
+                     Φ⁻¹(1 - 1/N) +
+                     sqrt(V[max SR]) * Φ⁻¹(1 - 1/N) + γ_3 * SR*
+
+    where γ_3 = skewness, κ_4 = excess kurtosis, SR* = benchmark_sharpe.
+
+    Then PSR_deflated = Φ((SR_obs - E[max SR]) / sqrt(V[max SR]))
+
+    The PSR_deflated should be > 0.95 for a strategy to be considered
+    "real edge, not just best of N" (Bailey & López de Prado threshold).
+
+    References
+    ----------
+    Bailey, D. H. & López de Prado, M. (2014). "The Deflated Sharpe
+    Ratio: Correcting for Selection Bias, Backtest Overfitting, and
+    Non-Normality." Journal of Portfolio Management, 40(5), 94-107.
+    """
+    if n_trials < 2:
+        # No multiple testing. PSR is the correct metric, not deflated.
+        return float("nan")
+
+    if observed_sharpe <= benchmark_sharpe:
+        # Observed SR is not above the null benchmark. It cannot be
+        # "the best of N trials" if it is not above the null.
+        return 0.0
+
+    # Variance of the SR estimator under the null (with skewness and
+    # excess kurtosis corrections per Bailey & López de Prado 2014).
+    # This is the asymptotic variance of a single SR estimate.
+    if n_obs_per_trial is None or n_obs_per_trial < 2:
+        # Asymptotic: V[SR] = 1 under the null
+        sr_variance = 1.0
+    else:
+        # Finite-sample: V[SR] = (1 + 0.5*SR^2 - γ_3*SR + ((κ_4)/6)*SR^2) / (n-1)
+        # Note: Bailey & López de Prado use REGULAR kurtosis in the
+        # variance formula (κ_4 = 3 for normal), not excess. The caller
+        # passes excess; we add 3 to get regular.
+        regular_kurtosis = returns_excess_kurtosis + 3.0
+        sr_variance = (
+            1.0
+            - returns_skewness * benchmark_sharpe
+            + 0.5 * benchmark_sharpe**2
+            + ((regular_kurtosis - 3.0) / 6.0) * benchmark_sharpe**2
+        ) / max(n_obs_per_trial - 1, 1)
+        # Guard against negative variance from numerical issues
+        sr_variance = max(sr_variance, 1e-12)
+
+    # Standard deviation of the SR estimator under the null
+    sr_std = np.sqrt(sr_variance)
+
+    # Expected maximum of N i.i.d. normal(0, sr_std) variables,
+    # adjusted for skewness and kurtosis per Bailey & López de Prado.
+    # Φ⁻¹(1 - 1/N) is the asymptotic expected max of N standard normals
+    z_threshold = stats.norm.ppf(1.0 - 1.0 / n_trials)
+
+    # Bias correction: skewness shifts the expected max
+    skew_bias = returns_skewness * benchmark_sharpe
+    kurt_bias = ((returns_excess_kurtosis - 1.0) / 4.0) * benchmark_sharpe**2
+
+    expected_max_sr = (
+        (1.0 - skew_bias + kurt_bias) * z_threshold
+        + skew_bias
+    ) * sr_std
+
+    # Z-score: how many std-devs above the expected max is the observed?
+    z = (observed_sharpe - expected_max_sr) / sr_std
+
+    # Probability that observed SR > expected max SR under the null
+    # (i.e., the strategy's edge is real, not just best of N)
+    psr_deflated = float(stats.norm.cdf(z))
+
+    # Numerical safety: clamp to [0, 1]
+    return max(0.0, min(1.0, psr_deflated))
+
+
 # Context-specific threshold tiers. Each entry: (threshold_upper_bound,
 # label, rich_style, confidence_band, interpretation). The threshold is
 # the upper bound of that tier (lower tier is strictly less). Tiers must

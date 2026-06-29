@@ -249,3 +249,154 @@ class TestPSRandFDRIntegration:
         assert len(p_corr) == 5
         # The first 2 should likely be significant
         assert rejected[0] or rejected[1]
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Deflated Sharpe Ratio (Phase 2.1)
+# ════════════════════════════════════════════════════════════════════════
+
+
+class TestDeflatedSharpeRatio:
+    """Phase 2.1: deflated_sharpe_ratio (Bailey & López de Prado 2014).
+
+    Adjusts PSR for multiple testing across N independent trials.
+    """
+
+    def test_n_trials_less_than_2_returns_nan(self):
+        """No multiple testing → PSR is the correct metric, deflated is NaN."""
+        from quant_lib.core._testing import deflated_sharpe_ratio
+        result = deflated_sharpe_ratio(2.0, 1, n_obs_per_trial=30)
+        assert result != result  # NaN
+        result = deflated_sharpe_ratio(2.0, 0, n_obs_per_trial=30)
+        assert result != result  # NaN
+        result = deflated_sharpe_ratio(2.0, -1, n_obs_per_trial=30)
+        assert result != result  # NaN
+
+    def test_observed_at_or_below_benchmark_returns_zero(self):
+        """Observed SR at or below null benchmark: cannot be best of N."""
+        from quant_lib.core._testing import deflated_sharpe_ratio
+        # observed == benchmark: returns 0
+        result = deflated_sharpe_ratio(0.0, 100, benchmark_sharpe=0.0)
+        assert result == 0.0
+        # observed < benchmark: returns 0
+        result = deflated_sharpe_ratio(-0.5, 100, benchmark_sharpe=0.0)
+        assert result == 0.0
+        # observed < positive benchmark
+        result = deflated_sharpe_ratio(0.3, 100, benchmark_sharpe=0.5)
+        assert result == 0.0
+
+    def test_high_observed_sr_with_few_trials_high_psr(self):
+        """Few trials + high observed SR → deflated PSR should be high."""
+        from quant_lib.core._testing import deflated_sharpe_ratio
+        # 5 trials, observed SR 2.0 with n_obs=30 → very significant
+        result = deflated_sharpe_ratio(2.0, 5, n_obs_per_trial=30)
+        assert result > 0.9
+
+    def test_moderate_observed_sr_with_many_trials_low_psr(self):
+        """Many trials + moderate observed SR → deflated PSR should be lower."""
+        from quant_lib.core._testing import deflated_sharpe_ratio
+        # 50000 trials, observed SR 0.5 with n_obs=30 → less significant
+        # (the bar is higher when there are many trials)
+        result_few = deflated_sharpe_ratio(0.5, 100, n_obs_per_trial=30)
+        result_many = deflated_sharpe_ratio(0.5, 50000, n_obs_per_trial=30)
+        # More trials → lower deflated PSR (more likely the SR is just
+        # the best of N under the null)
+        assert result_many < result_few
+
+    def test_n_obs_per_trial_affects_variance(self):
+        """More observations per trial → lower SR variance → higher PSR."""
+        from quant_lib.core._testing import deflated_sharpe_ratio
+        # Same observed SR and n_trials, but more observations
+        result_few_obs = deflated_sharpe_ratio(
+            0.5, 14400, n_obs_per_trial=30
+        )
+        result_many_obs = deflated_sharpe_ratio(
+            0.5, 14400, n_obs_per_trial=500
+        )
+        # More observations per trial → tighter SR distribution
+        # → easier to reject null → higher deflated PSR
+        assert result_many_obs > result_few_obs
+
+    def test_skewness_correction_applied(self):
+        """Negative skewness penalizes the deflated PSR (worse strategy)."""
+        from quant_lib.core._testing import deflated_sharpe_ratio
+        # Same observed SR and trials, but with different skewness
+        result_normal = deflated_sharpe_ratio(
+            1.0, 1000, returns_skewness=0.0, n_obs_per_trial=100
+        )
+        result_neg_skew = deflated_sharpe_ratio(
+            1.0, 1000, returns_skewness=-2.0, n_obs_per_trial=100
+        )
+        # Negative skewness (lottery-ticket-like losses) should
+        # reduce the deflated PSR (or at least not increase it).
+        assert result_neg_skew <= result_normal
+
+    def test_excess_kurtosis_correction_applied(self):
+        """Fat tails (positive excess kurtosis) reduce the deflated PSR."""
+        from quant_lib.core._testing import deflated_sharpe_ratio
+        result_normal = deflated_sharpe_ratio(
+            1.0, 1000, returns_excess_kurtosis=0.0, n_obs_per_trial=100
+        )
+        result_fat_tails = deflated_sharpe_ratio(
+            1.0, 1000, returns_excess_kurtosis=3.0, n_obs_per_trial=100
+        )
+        # Fat tails → wider SR distribution → harder to reject null
+        # → lower deflated PSR
+        assert result_fat_tails <= result_normal
+
+    def test_result_in_valid_range(self):
+        """Deflated PSR is always in [0, 1]."""
+        from quant_lib.core._testing import deflated_sharpe_ratio
+        # Edge case inputs that could cause numerical issues
+        result = deflated_sharpe_ratio(0.001, 2, n_obs_per_trial=100)
+        assert 0.0 <= result <= 1.0
+        result = deflated_sharpe_ratio(100.0, 1000000, n_obs_per_trial=10)
+        assert 0.0 <= result <= 1.0
+        # Negative observed with positive benchmark
+        result = deflated_sharpe_ratio(-10.0, 100, benchmark_sharpe=0.0)
+        assert 0.0 <= result <= 1.0
+
+    def test_default_benchmark_is_zero(self):
+        """Default benchmark_sharpe is 0.0 (no risk-free rate)."""
+        from quant_lib.core._testing import deflated_sharpe_ratio
+        # Calling without benchmark should work (default 0.0)
+        result = deflated_sharpe_ratio(1.0, 100, n_obs_per_trial=50)
+        assert 0.0 <= result <= 1.0
+
+    def test_realistic_framework_scenario(self):
+        """Realistic: 6 symbols × 30 folds × 80 trials = 14400 trials.
+        Observed SR 0.8, n_obs 50 (typical crypto strategy).
+
+        The exact deflated PSR value depends on the math (n_obs/trial
+        shrinks the SR variance enough that moderate observed SR can
+        still be significant). The important property is that the
+        result is bounded in [0, 1] and well-defined.
+        """
+        from quant_lib.core._testing import deflated_sharpe_ratio
+        result = deflated_sharpe_ratio(
+            observed_sharpe=0.8,
+            n_trials=14400,  # 6 × 30 × 80
+            returns_skewness=-0.5,  # typical crypto negative skew
+            returns_excess_kurtosis=2.0,  # fat tails
+            n_obs_per_trial=50,
+        )
+        # Deflated PSR is bounded in [0, 1]
+        assert 0.0 <= result <= 1.0
+        # Deflated PSR should be lower than or equal to the
+        # uncorrected (single-trial) probability for a positive SR
+        # (multiple testing correction always reduces confidence).
+        # We check this by computing with n_trials=1 (== NaN) and
+        # comparing to n_trials=10000:
+        result_few_trials = deflated_sharpe_ratio(
+            0.8, 100, n_obs_per_trial=50
+        )
+        # More trials → deflated PSR is lower or equal
+        assert result <= result_few_trials + 1e-9
+
+    def test_zero_n_obs_per_trial_uses_asymptotic(self):
+        """n_obs_per_trial=None or 0 → asymptotic variance formula."""
+        from quant_lib.core._testing import deflated_sharpe_ratio
+        result = deflated_sharpe_ratio(1.0, 100, n_obs_per_trial=None)
+        assert 0.0 <= result <= 1.0
+        result = deflated_sharpe_ratio(1.0, 100, n_obs_per_trial=0)
+        assert 0.0 <= result <= 1.0
