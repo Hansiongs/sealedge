@@ -12,7 +12,8 @@ import numpy as np
 from datetime import timedelta
 from typing import Any
 
-from quant_lib.core._config import STATIC
+from quant_lib.core._config import STATIC, DEFAULTS
+from quant_lib.core._logging import log
 
 _LiqTrade = dict[str, Any]
 _Position = dict[str, Any]
@@ -195,6 +196,10 @@ def simulate_full_portfolio(
     current_day = None
     executed_trades = []
     reject_reasons = {"cb_cooldown": 0, "position_limit": 0, "margin_insufficient": 0}
+    # Phase 2.4: track which symbols have triggered the market
+    # impact cap, so we only log once per symbol per run (avoids
+    # spamming logs for high-frequency strategies).
+    _capped_symbols: set[str] = set()
 
     # Per-asset circuit breaker
     (
@@ -400,6 +405,48 @@ def simulate_full_portfolio(
             risk_capital = current_equity * risk_weight
             notional = risk_capital / sl_pct
             initial_margin = notional / leverage
+
+            # Phase 2.4: Market impact cap. Position notional is
+            # capped at DEFAULTS["market_impact_volume_pct"] of 24h
+            # volume. Prevents the trend multiplier (1.5x with-trend)
+            # from creating unrealistically large orders on illiquid
+            # assets where live fill price would move against the
+            # order. Uses daily close as a conservative proxy for
+            # 24h volume (true volume is typically higher, so this
+            # is a conservative cap). Only logs once per symbol per
+            # run to avoid spam.
+            market_impact_pct = DEFAULTS.get("market_impact_volume_pct", 0.01)
+            if market_impact_pct > 0 and daily_close_matrix:
+                daily_close_proxy = float(
+                    daily_close_matrix.get(sym, {}).get(day_key, 0.0)
+                )
+                if daily_close_proxy > 0:
+                    # Target notional cap (in USD) = 24h volume proxy
+                    # × market_impact_pct × leverage
+                    market_impact_cap = (
+                        daily_close_proxy
+                        * market_impact_pct
+                        * leverage
+                    )
+                    # notional = current_equity * risk_weight / sl_pct
+                    # Cap risk_weight so notional <= market_impact_cap
+                    max_risk_weight = (
+                        market_impact_cap * sl_pct / max(current_equity, 1.0)
+                    )
+                    if risk_weight > max_risk_weight:
+                        if sym not in _capped_symbols:
+                            _capped_symbols.add(sym)
+                            log.info(
+                                f"[market impact cap] {sym} order reduced: "
+                                f"risk_weight {risk_weight:.4f} -> "
+                                f"{max_risk_weight:.4f} "
+                                f"(cap = {market_impact_pct*100:.1f}% of 24h volume)"
+                            )
+                        risk_weight = max_risk_weight
+                        # Recompute notional and initial_margin
+                        risk_capital = current_equity * risk_weight
+                        notional = risk_capital / sl_pct
+                        initial_margin = notional / leverage
 
             total_im_used = 0.0
             for p in open_positions.values():

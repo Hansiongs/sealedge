@@ -125,6 +125,13 @@ DEFAULTS: dict[str, Any] = {
     # Default expected trades/year (used when per-experiment override
     # not provided). 30 is a reasonable conservative default.
     "default_expected_trades_per_year": 30,
+    # Phase 2.4: Market impact cap. Position size is capped at this
+    # fraction of 24h volume. Prevents the trend multiplier (1.5x
+    # with-trend) from creating unrealistically large orders on
+    # illiquid assets where live fill price would move against the
+    # order. 1% is a conservative cap; production trading may use
+    # 0.1-0.5% for very liquid pairs.
+    "market_impact_volume_pct": 0.01,
 }
 
 # WARMUP_BARS -- safe ceiling for all feature lookback windows.
