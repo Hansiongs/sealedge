@@ -110,7 +110,11 @@ def prepare_data_with_max_time(
             abs(df["low"] - df["close"].shift(1)),
         ),
     )
-    df["atr"] = df["tr"].rolling(window=STATIC["atr_len"]).mean()
+    # ATR is used for SL distance at entry bar (engine line 287, 326,
+    # 387, 416). Use yesterday's ATR to avoid current-bar look-ahead:
+    # today's SL shouldn't depend on today's realized volatility.
+    # Phase 1.5 fix: add shift(1).
+    df["atr"] = df["tr"].rolling(window=STATIC["atr_len"]).mean().shift(1)
     df["ema_200"] = df["close"].ewm(span=200, adjust=False).mean().shift(1)
     df["macro_vol"] = df["log_ret"].rolling(window=30 * 24).std().shift(1) * np.sqrt(
         365 * 24

@@ -276,7 +276,13 @@ def portfolio_spa(
             pct = (it + 1) / n_iters * 100
             console.print(f"   SPA progress: {pct:.0f}% ({it+1}/{n_iters})")
 
-    # Davé 2008 SPA correction
+    # Phipson-Bell (2010) add-one correction. Note: this is NOT a
+    # proper Hansen 2005 SPA null -- the null here is uniform time-
+    # anchored permutation of observed trades, which preserves cross-
+    # asset co-occurrence structure. This correction is the standard
+    # add-one for permutation tests (Phipson & Smyth 2010). The
+    # previous label "Davé 2008" was incorrect; the formula is the
+    # same but the attribution is to Phipson-Bell.
     n_exceed = int(np.sum(random_equities >= observed_final_equity))
     p_value = (n_exceed + 1) / (n_iters + 1)
     return observed_final_equity, random_equities, p_value

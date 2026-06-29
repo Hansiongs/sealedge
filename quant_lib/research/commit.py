@@ -6,7 +6,8 @@ Once called, the holdout seal is broken and the commit is recorded
 in the session's audit trail.
 
 Per the framework:
-- Frozen params from candidate (best-last-fold per symbol)
+- Frozen params from candidate (stability-gated best fold per symbol --
+  see quant_lib.research.best_params.pick_best_params_per_symbol)
 - No re-optimization on holdout
 - Full cost model: slippage, weekend, funding
 - Compute SHA256 hash of actual holdout data before breaking seal
@@ -16,6 +17,8 @@ Per the framework:
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
+
+import os
 
 import numpy as np
 import pandas as pd
@@ -433,11 +436,17 @@ def commit_to_holdout(
         session.holdout_set.commit_break(seal_hash_after)
     )
     if not was_intact:
+        # Use the configured seal directory (env var or convention
+        # default) instead of hardcoding the path. Phase 1.6 fix.
+        seal_dir_hint = os.environ.get(
+            "QUANT_LIB_SEAL_DIR",
+            os.path.join(session.cache_dir, "holdout_seals"),
+        )
         raise CommitError(
             "Holdout seal was already broken at the moment of "
             "commit_break. This indicates a race condition (another "
             "commit ran concurrently) or a state inconsistency. "
-            "Investigate data_cache/holdout_seals/ for the file "
+            f"Investigate {seal_dir_hint}/ for the file "
             "and re-create the session to retry.",
         )
 
@@ -476,12 +485,17 @@ def commit_to_holdout(
         _, psr_ess_val = prob_sharpe_ratio(r_vals, annualize=False)
         from scipy import stats as scipy_stats
         skew_val = float(scipy_stats.skew(r_vals)) if n_trades >= 3 else 0.0
-        kurt_val = float(scipy_stats.kurtosis(r_vals, fisher=False)) if n_trades >= 3 else 0.0
-        # ESS for uniform weights: Kish formula gives n (the sample count),
-        # but the PSR variance denominator is n - 1 (sample variance uses
-        # n-1). For metadata consistency, report the same convention
-        # the PSR formula uses. (Phase 3.4 E3 fix: was n_trades.)
-        ess = float(n_trades - 1) if n_trades > 0 else 0.0
+        kurt_val = float(scipy_stats.kurtosis(r_vals, fisher=True)) if n_trades >= 3 else 0.0
+        # Kish effective sample size: ESS = (sum w)^2 / sum(w^2).
+        # For uniform weights w_i = 1/n, this simplifies to n.
+        # Previously reported as n-1 (sample variance df), which was
+        # inconsistent with the label "ess". Phase 1.2 fix: report
+        # Kish-corrected ESS, which equals n for uniform weights.
+        if n_trades > 0:
+            w = np.ones(n_trades) / n_trades
+            ess = 1.0 / float(np.dot(w, w))  # = n for uniform weights
+        else:
+            ess = 0.0
         # Bars held
         bars_list = []
         for t in h_executed:
@@ -496,7 +510,9 @@ def commit_to_holdout(
         win_rate = avg_r = median_r = std_r = 0.0
         best_r = worst_r = 0.0
         pf = sharpe = 0.0
-        psr_ess_val = 0.5
+        # No evidence either way when zero trades -- NaN, not 0.5.
+        # 0.5 would imply "neutral coin flip", which is misleading.
+        psr_ess_val = float("nan")
         skew_val = kurt_val = 0.0
         ess = 0.0
         avg_bars = 0.0
