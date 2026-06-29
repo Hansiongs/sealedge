@@ -7,6 +7,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (Phase 2: HIGH-severity fixes — Statistical integrity, look-ahead, market impact)
+
+- **Deflated PSR (Bailey & López de Prado 2014)** added (`core/_testing.py`):
+  `deflated_sharpe_ratio()` function adjusts the single-trial PSR for
+  the family of Optuna trials that produced the winning params. This
+  is the missing piece between PSR (single-trial) and the existing
+  Bonferroni correction on `n_commits` (which under-counts the real
+  family: `n_symbols × n_folds × n_optuna_trials ≈ 14,400`).
+  - 11 new tests in `tests/test_psr_ess.py::TestDeflatedSharpeRatio`.
+  - New `deflated_psr` and `n_trials_in_deflated` fields in
+    `CommitResult` (with sensible defaults; NaN when n_trials < 2).
+  - Computed in `commit_to_holdout` using `n_folds × n_trials_per_fold`
+    as the family size and the per-trade Sharpe as the observed SR.
+- **Macro trend isolation** (`core/_features.py` + `commit.py`): new
+  `btc_holdout_start` parameter on `prepare_data_with_max_time`. When
+  set (commit-time only), the asset-level EMA is computed strictly
+  on data BEFORE this timestamp, and the last value is forward-filled
+  into the holdout. Previously, the holdout's own price action
+  influenced the trend signal (state-persistence leak). The trade
+  multiplier (1.5x with-trend) could be tuned by looking at the
+  holdout; this is now prevented.
+  - 3 new tests in `tests/test_features.py::TestMacroTrendHoldoutIsolation`.
+  - Default behavior (no `btc_holdout_start`) unchanged for WFA path.
+- **Funding data hash** (BC break, Phase 2.3): funding rate data is
+  now part of the holdout seal hash. Tampering with funding between
+  session creation and commit would silently change trade PnL
+  (via the engine's `funding_impact_pct` term); this was previously
+  undetectable. Funding is pre-loaded at session init and verified
+  at commit time.
+  - **BC break**: existing seals (pre-2.3) have hashes computed
+    without funding. Users with existing seals must re-create
+    sessions to use Phase 2.3+.
+  - New `_holdout_funding_for_hash` attribute on `ResearchSession`.
+  - New optional `_holdout_funding` parameter on `ResearchSession`
+    for tests that pre-load their own data.
+  - 5 new tests in `tests/test_session.py::TestFundingDataHash`.
+- **Market impact cap** (`core/_config.py` + `core/_portfolio.py`):
+  new `market_impact_volume_pct` (default 0.01 = 1% of 24h volume)
+  in `DEFAULTS`. Position notional is capped at this fraction of
+  daily close (proxy for 24h volume) × leverage. Prevents the trend
+  multiplier (1.5x with-trend) from creating unrealistically large
+  orders on illiquid assets where live fill price would move
+  against the order. Cap is logged once per symbol per run.
+  - 4 new tests in `tests/test_portfolio.py::TestMarketImpactCap`.
+- **WFA exposes IS trades** (`core/_wfa.py` + `research/candidate.py`):
+  `run_wfa_per_symbol` now returns a 3-tuple
+  `(oos_trades, fold_params, is_trades_per_fold)`. The new
+  `is_trades_per_fold` is a list of per-fold IS trade dicts, generated
+  by running `fast_trade_loop` on IS data with the winning Optuna
+  params. This is the foundation for fully decoupling the
+  meta-allocator (IS-based) from the strategy selector (OOS-based).
+  - **Future work**: the PF-weighted risk allocator in
+    `_risk_allocation.py` still consumes OOS trades. Switching it
+    to consume IS trades is deferred to a follow-up to avoid scope
+    creep in this PR. The structural change (3-tuple return) is
+    shipped now so downstream consumers can adopt it incrementally.
+  - All 6 existing `test_wfa.py` test sites updated to unpack
+    the 3-tuple. The candidate.py call site updated.
+  - New `candidate._is_trades_per_fold_by_sym` attribute (captured
+    for future use by the IS-based allocator).
+
+### Notes
+
+- All 1130 unit tests pass after these changes.
+- `ruff check quant_lib/` passes with no errors.
+- The headline statistical improvement is the Deflated PSR (Phase 2.1).
+  It addresses the FWER under-correction that the previous Bonferroni
+  adjustment on `n_commits` missed. A deflated_psr < 0.95 means the
+  strategy's edge is likely just the best of N trials under the null,
+  not a real edge worth deploying capital.
+- The macro trend fix (Phase 2.2) and funding hash (Phase 2.3) close
+  silent leak / tampering vectors that were not detected by the
+  previous holdout seal mechanism. The seal now covers the full
+  no-peek guarantee.
+- The market impact cap (Phase 2.4) is a first approximation. A
+  more accurate implementation would use actual 24h volume data
+  (the daily close proxy is conservative — it underestimates true
+  volume, so the cap is tighter than optimal).
+- The WFA refactor (Phase 2.5) is structural; the actual
+  IS-based PF allocation is a follow-up. Tracked separately.
+
 ### Changed (Phase 1: Quick Wins — Stability, Consistency, Look-ahead)
 
 - **Best-params selection is now stability-gated** (`research/best_params.py`):
