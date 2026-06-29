@@ -2,9 +2,10 @@
 
 import tempfile
 import pytest
+import pandas as pd
 
 from quant_lib.audit import Hypothesis, for_vol_compression
-from quant_lib.research.session import ResearchSession
+from quant_lib.research.session import ResearchSession, _compute_holdout_data_hash
 from quant_lib.research.exceptions import InvalidPeriod
 
 
@@ -378,4 +379,119 @@ class TestResearchSessionSealDir:
             with open(expected_file, "r") as f:
                 state = json.load(f)
             assert verify_seal_signature(state)
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Phase 2.3: Funding data hash (BC break)
+# ════════════════════════════════════════════════════════════════════════
+
+
+class TestFundingDataHash:
+    """Phase 2.3: funding rate data is now part of the holdout seal hash.
+
+    This is a BC break: existing seals (pre-2.3) have hashes computed
+    without funding. Users with existing seals must re-create sessions.
+    """
+
+    def test_funding_changes_hash(self):
+        """Adding funding data must change the hash."""
+        ohlcv = {
+            "BTCUSDT": pd.DataFrame({
+                "time": [1, 2, 3],
+                "close": [100.0, 101.0, 102.0],
+                "volume": [10.0, 20.0, 30.0],
+            })
+        }
+        funding_a = {
+            "BTCUSDT": pd.DataFrame({
+                "time": [1, 2, 3],
+                "funding_rate": [0.0001, 0.0002, 0.0003],
+            })
+        }
+        funding_b = {
+            "BTCUSDT": pd.DataFrame({
+                "time": [1, 2, 3],
+                "funding_rate": [0.0002, 0.0003, 0.0004],  # different
+            })
+        }
+        hash_no = _compute_holdout_data_hash(ohlcv)
+        hash_a = _compute_holdout_data_hash(ohlcv, funding_data=funding_a)
+        hash_b = _compute_holdout_data_hash(ohlcv, funding_data=funding_b)
+        assert hash_no != hash_a, "Funding must change hash"
+        assert hash_a != hash_b, "Different funding must change hash"
+
+    def test_funding_none_preserves_backward_compat(self):
+        """When funding_data=None, hash matches the pre-2.3 behavior."""
+        ohlcv = {
+            "BTCUSDT": pd.DataFrame({
+                "time": [1, 2, 3],
+                "close": [100.0, 101.0, 102.0],
+            })
+        }
+        # No funding arg
+        hash1 = _compute_holdout_data_hash(ohlcv)
+        # Explicit None
+        hash2 = _compute_holdout_data_hash(ohlcv, funding_data=None)
+        assert hash1 == hash2, "None funding should match no funding"
+
+    def test_funding_empty_dict_treated_as_none(self):
+        """Empty funding dict is treated as no funding."""
+        ohlcv = {
+            "BTCUSDT": pd.DataFrame({
+                "time": [1, 2, 3],
+                "close": [100.0, 101.0, 102.0],
+            })
+        }
+        hash_none = _compute_holdout_data_hash(ohlcv)
+        hash_empty = _compute_holdout_data_hash(ohlcv, funding_data={})
+        assert hash_none == hash_empty
+
+    def test_funding_columns_filtered(self):
+        """Only time and funding_rate columns are hashed (others ignored)."""
+        ohlcv = {
+            "BTCUSDT": pd.DataFrame({
+                "time": [1, 2, 3],
+                "close": [100.0, 101.0, 102.0],
+            })
+        }
+        # Funding with extra columns that should be ignored
+        funding_extra = {
+            "BTCUSDT": pd.DataFrame({
+                "time": [1, 2, 3],
+                "funding_rate": [0.0001, 0.0002, 0.0003],
+                "extra_ignored": [99, 98, 97],
+            })
+        }
+        funding_clean = {
+            "BTCUSDT": pd.DataFrame({
+                "time": [1, 2, 3],
+                "funding_rate": [0.0001, 0.0002, 0.0003],
+            })
+        }
+        hash_extra = _compute_holdout_data_hash(ohlcv, funding_data=funding_extra)
+        hash_clean = _compute_holdout_data_hash(ohlcv, funding_data=funding_clean)
+        assert hash_extra == hash_clean, "Non-canonical columns should not affect hash"
+
+    def test_funding_per_symbol(self):
+        """Different funding per symbol gives different hash."""
+        ohlcv = {
+            "BTCUSDT": pd.DataFrame({
+                "time": [1, 2, 3], "close": [100.0, 101.0, 102.0]
+            }),
+            "ETHUSDT": pd.DataFrame({
+                "time": [1, 2, 3], "close": [50.0, 51.0, 52.0]
+            }),
+        }
+        funding_btc = {
+            "BTCUSDT": pd.DataFrame({"time": [1, 2, 3], "funding_rate": [0.0001, 0.0002, 0.0003]}),
+            "ETHUSDT": pd.DataFrame({"time": [1, 2, 3], "funding_rate": [0.0004, 0.0005, 0.0006]}),
+        }
+        # Swap funding between symbols
+        funding_swapped = {
+            "BTCUSDT": pd.DataFrame({"time": [1, 2, 3], "funding_rate": [0.0004, 0.0005, 0.0006]}),
+            "ETHUSDT": pd.DataFrame({"time": [1, 2, 3], "funding_rate": [0.0001, 0.0002, 0.0003]}),
+        }
+        h1 = _compute_holdout_data_hash(ohlcv, funding_data=funding_btc)
+        h2 = _compute_holdout_data_hash(ohlcv, funding_data=funding_swapped)
+        assert h1 != h2, "Per-symbol funding must affect hash"
 

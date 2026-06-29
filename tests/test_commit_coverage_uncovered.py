@@ -91,12 +91,14 @@ def _build_session_with_signal_data(
         btc_data_start=BTC_DATA_START,
         _holdout_data=holdout_data,
         _btc_extended=btc_extended,
+        _holdout_funding={},  # Phase 2.3: explicit empty funding for test
     )
 
     # Update seal hash to match the actual holdout data
     session._holdout_hash = _compute_holdout_data_hash(
         session._holdout_data_for_hash,
         btc_extended=session._btc_extended_for_features,
+        funding_data=session._holdout_funding_for_hash,
     )
     session.holdout_set._seal.data_hash = session._holdout_hash
     session.holdout_set._save_seal()

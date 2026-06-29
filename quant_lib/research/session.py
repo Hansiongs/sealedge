@@ -62,8 +62,9 @@ _HOLDOUT_HASH_COLUMNS = ("time", "open", "high", "low", "close", "volume")
 def _compute_holdout_data_hash(
     holdout_data: dict[str, pd.DataFrame],
     btc_extended: Optional[pd.DataFrame] = None,
+    funding_data: Optional[dict[str, pd.DataFrame]] = None,
 ) -> str:
-    """Compute SHA256 of holdout raw OHLCV per symbol.
+    """Compute SHA256 of holdout raw OHLCV + funding per symbol.
 
     The hash covers ALL OHLCV columns (open, high, low, close, volume)
     so that any tampering with the underlying price/volume data is
@@ -77,6 +78,12 @@ def _compute_holdout_data_hash(
     pre-holdout BTC data would silently change EMA features and trade
     signals, so it must be in the seal.
 
+    If ``funding_data`` is provided (Phase 2.3: BC break), each
+    symbol's funding rate series is also hashed. Funding data affects
+    trade PnL through the funding_impact_pct term in the engine.
+    Tampering with funding data between session creation and commit
+    would silently change trade outcomes, so it must be in the seal.
+
     Symbols are sorted to make ordering deterministic.
 
     Parameters
@@ -86,6 +93,10 @@ def _compute_holdout_data_hash(
     btc_extended : pd.DataFrame, optional
         BTC data covering ``btc_data_start`` to ``hold_end`` (includes
         the holdout window). If None, only ``holdout_data`` is hashed.
+    funding_data : dict, optional
+        Phase 2.3: {sym: DataFrame with funding_rate column}.
+        If None, funding is not hashed (backward compat for tests
+        that don't pass funding).
 
     Returns
     -------
@@ -115,6 +126,20 @@ def _compute_holdout_data_hash(
         if cols:
             hasher.update(
                 btc_extended[cols].to_csv(index=False).encode("utf-8")
+            )
+    # Phase 2.3: Hash funding data per symbol. This is a BC break
+    # for users with existing seals (the new hash will differ from
+    # the old one, so they must re-create sessions).
+    if funding_data is not None:
+        for sym in sorted(funding_data.keys()):
+            df = funding_data[sym]
+            if df is None or len(df) == 0:
+                continue
+            cols = [c for c in ["time", "funding_rate"] if c in df.columns]
+            if not cols:
+                continue
+            hasher.update(
+                df[cols].to_csv(index=False).encode("utf-8")
             )
     return hasher.hexdigest()
 
@@ -189,6 +214,13 @@ class ResearchSession:
         don't care about the holdout seal mechanism can pass this
         flag and avoid network/cache entirely. Production code
         should NOT pass this.
+    _holdout_funding : dict, optional (INTERNAL/TESTING)
+        Pre-loaded holdout funding data as ``{sym: DataFrame}``.
+        Used together with ``_holdout_data`` when tests want to
+        control the funding content (the production path auto-
+        fetches via ``self.cache.get_funding``). Ignored if
+        ``_holdout_data`` is None. Production code should NOT pass
+        this. Phase 2.3.
     """
 
     def __init__(
@@ -209,6 +241,7 @@ class ResearchSession:
         _btc_extended: Optional[pd.DataFrame] = None,
         _holdout_hash: Optional[str] = None,
         _skip_holdout_load: bool = False,
+        _holdout_funding: Optional[dict[str, pd.DataFrame]] = None,
     ):
         # Validate periods
         train_start, train_end = training_period
@@ -292,6 +325,35 @@ class ResearchSession:
                 list(symbols), hold_start, hold_end, btc_data_start
             )
 
+        # Phase 2.3: Pre-load funding data so it can be hashed into the
+        # seal. Funding affects trade PnL (via funding_impact_pct in
+        # the engine), so tampering with funding between session
+        # creation and commit would silently change trade outcomes.
+        # This is a BC break for users with existing seals (the new
+        # hash will differ from the old one).
+        self._holdout_funding_for_hash: dict[str, pd.DataFrame] = {}
+        if not _skip_holdout_load:
+            # Test path: use the pre-loaded funding if provided.
+            if _holdout_funding is not None:
+                for sym, fund_df in _holdout_funding.items():
+                    if fund_df is not None and len(fund_df) > 0:
+                        self._holdout_funding_for_hash[sym] = fund_df.copy()
+            else:
+                # Production path: fetch from cache.
+                for sym in symbols:
+                    try:
+                        fund_df = self.cache.get_funding(
+                            sym, hold_start, hold_end
+                        )
+                        if fund_df is not None and len(fund_df) > 0:
+                            # Defensive copy to insulate from cache mutations
+                            self._holdout_funding_for_hash[sym] = fund_df.copy()
+                    except Exception as e:
+                        # Surface clearly; do not silently swallow
+                        raise SessionError(
+                            f"Failed to load holdout funding for {sym}: {e}"
+                        ) from e
+
         # Compute or use provided hash (skip if _skip_holdout_load
         # already set a deterministic fake).
         if not _skip_holdout_load:
@@ -306,6 +368,7 @@ class ResearchSession:
                 self._holdout_hash = _compute_holdout_data_hash(
                     self._holdout_data_for_hash,
                     btc_extended=self._btc_extended_for_features,
+                    funding_data=self._holdout_funding_for_hash,
                 )
 
         # Seal holdout with real hash (file persistence)
