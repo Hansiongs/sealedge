@@ -63,11 +63,18 @@ def prepare_data_with_max_time(
     max_time: pd.Timestamp,
     strategy_type: int = STRATEGY_VOL_COMPRESSION,
     rsi_period: int = _DEFAULT_RSI_PERIOD,
+    btc_holdout_start: pd.Timestamp | None = None,
 ) -> pd.DataFrame:
     """
     Compute ALL features using only data <= max_time.
     NO bfill -- any remaining NaN in the early warm‑up period will be dropped
     later when we slice IS/OOS windows (which always start after >720 hours).
+
+    Phase 2.2: When ``btc_holdout_start`` is provided, ``macro_trend``
+    (and the asset-level EMA) are computed strictly on data BEFORE this
+    timestamp, then forward-filled into the holdout. This prevents the
+    holdout's own price action from leaking into the trend signal.
+    Default ``None`` (preserves prior behavior: compute on full df).
 
     Parameters
     ----------
@@ -123,15 +130,62 @@ def prepare_data_with_max_time(
     # Per-asset MACRO TREND (volatility-adjusted EMA)
     # Replaces BTC-only macro_trend so each symbol uses its own regime.
     # span is scaled by relative volatility vs target baseline.
-    asset_vol_annual = (
-        df["log_ret"].rolling(window=30 * 24).std().shift(1) * np.sqrt(365 * 24)
-    )
-    asset_vol_median = float(asset_vol_annual.median()) if len(asset_vol_annual.dropna()) > 0 else _TARGET_VOL_FOR_SPAN
-    asset_vol_median = max(asset_vol_median, 0.1)  # avoid div by zero
-    span_scaled = _DEFAULT_SPAN_EMA * (asset_vol_median / _TARGET_VOL_FOR_SPAN)
-    span_clamped = int(np.clip(span_scaled, _MIN_SPAN, _MAX_SPAN))
-    asset_ema = df["close"].ewm(span=span_clamped, adjust=False).mean()
-    df["macro_trend"] = np.where(df["close"] > asset_ema, 1, -1).astype(np.int32)
+    #
+    # Phase 2.2: When ``btc_holdout_start`` is provided, the asset EMA
+    # is computed on data STRICTLY before this timestamp, and the
+    # last value is forward-filled into the holdout. This prevents
+    # the holdout's own price action from influencing the trend
+    # signal (state-persistence leak). When ``btc_holdout_start`` is
+    # None (default), the original behavior is preserved: EMA is
+    # computed on the full df (used in WFA path, where look-ahead
+    # within the IS is acceptable and necessary for proper regime
+    # detection across the full training period).
+    if btc_holdout_start is not None:
+        # Compute vol scaling on pre-holdout data only
+        df_pre = df[df["time"] < btc_holdout_start]
+        if len(df_pre) > 0:
+            asset_vol_annual_pre = (
+                df_pre["log_ret"].rolling(window=30 * 24).std().shift(1)
+                * np.sqrt(365 * 24)
+            )
+            asset_vol_median = (
+                float(asset_vol_annual_pre.median())
+                if len(asset_vol_annual_pre.dropna()) > 0
+                else _TARGET_VOL_FOR_SPAN
+            )
+        else:
+            asset_vol_median = _TARGET_VOL_FOR_SPAN
+        asset_vol_median = max(asset_vol_median, 0.1)
+        span_scaled = _DEFAULT_SPAN_EMA * (asset_vol_median / _TARGET_VOL_FOR_SPAN)
+        span_clamped = int(np.clip(span_scaled, _MIN_SPAN, _MAX_SPAN))
+        # Compute EMA only on pre-holdout data, take last value, ffill
+        if len(df_pre) > 0:
+            asset_ema_pre = (
+                df_pre["close"].ewm(span=span_clamped, adjust=False).mean()
+            )
+            last_ema = (
+                float(asset_ema_pre.iloc[-1])
+                if len(asset_ema_pre) > 0
+                else float(df_pre["close"].mean())
+            )
+        else:
+            # Edge case: no pre-holdout data, use mean of full df
+            last_ema = float(df["close"].mean())
+        # Forward-fill the constant into the full df
+        df["macro_trend"] = np.where(
+            df["close"] > last_ema, 1, -1
+        ).astype(np.int32)
+    else:
+        # Original behavior: compute on full df (WFA path)
+        asset_vol_annual = (
+            df["log_ret"].rolling(window=30 * 24).std().shift(1) * np.sqrt(365 * 24)
+        )
+        asset_vol_median = float(asset_vol_annual.median()) if len(asset_vol_annual.dropna()) > 0 else _TARGET_VOL_FOR_SPAN
+        asset_vol_median = max(asset_vol_median, 0.1)  # avoid div by zero
+        span_scaled = _DEFAULT_SPAN_EMA * (asset_vol_median / _TARGET_VOL_FOR_SPAN)
+        span_clamped = int(np.clip(span_scaled, _MIN_SPAN, _MAX_SPAN))
+        asset_ema = df["close"].ewm(span=span_clamped, adjust=False).mean()
+        df["macro_trend"] = np.where(df["close"] > asset_ema, 1, -1).astype(np.int32)
     # Shift to prevent lookahead at entry bar (uses yesterday's regime)
     df["macro_trend"] = df["macro_trend"].shift(1)
     # drop intermediate asset_vol_annual (not needed downstream)
