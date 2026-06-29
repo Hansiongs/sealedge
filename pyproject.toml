@@ -118,6 +118,7 @@ skip_empty = true
 [tool.mutmut]
 runner = "mutmut.trampoline"
 tests_dir = "tests/"
+source_paths = ["quant_lib/"]
 mutate = [
     "quant_lib/research/candidate.py",
     "quant_lib/research/commit.py",
