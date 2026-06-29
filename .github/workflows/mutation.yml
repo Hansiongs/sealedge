@@ -80,18 +80,7 @@ jobs:
           retention-days: 14
           if-no-source-found: ignore
 
-      - name: Comment on PR (if any)
-        # When triggered by a PR (via workflow_dispatch + branch),
-        # post a summary comment. Scheduled runs have no PR, so
-        # this step is a no-op there.
-        if: github.event_name == 'workflow_dispatch' && github.event.pull_request.number
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const output = `### Mutation testing (mutmut)\n\nScheduled run completed. Check the workflow run for full results.`;
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: output
-            });
+      # (PR comment step removed: the workflow trigger only includes
+      # schedule and workflow_dispatch, not pull_request, so PR context
+      # is never available. Adding pull_request to triggers would
+      # needlessly run mutation testing on every push.)
