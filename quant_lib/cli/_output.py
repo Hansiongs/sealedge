@@ -15,12 +15,11 @@ from __future__ import annotations
 
 import html
 import json
-import os
 import platform
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, Sequence, Union
+from typing import TYPE_CHECKING, Any, Sequence, Union
 
 import yaml
 
@@ -168,7 +167,7 @@ def _safe_mklink(link: Path, target: str) -> None:
             link.unlink()
         # Use relative target for portability
         link.symlink_to(target)
-    except OSError as e:
+    except OSError:
         # Some filesystems (e.g., Windows without admin) don't allow
         # symlinks. Fall back to a "LATEST" marker file.
         try:

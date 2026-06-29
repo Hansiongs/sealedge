@@ -10,11 +10,9 @@ from __future__ import annotations
 import io
 import json
 import os
-import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 from rich.console import Console
 
 import quant_lib.cli.status_cmd as status_mod

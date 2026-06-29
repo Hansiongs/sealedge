@@ -14,9 +14,7 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -170,7 +168,6 @@ class TestSaveConfig:
 
     def _make_exp_config(self):
         """Build a minimal ``ExperimentConfig`` for save_config tests."""
-        from dataclasses import asdict
         from quant_lib.audit import for_vol_compression
         from quant_lib.experiments import (
             ExperimentConfig,

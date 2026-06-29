@@ -3,11 +3,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-import numpy as np
 import pandas as pd
-import pytest
 
-from quant_lib.tools import features as features_mod
 from quant_lib.tools.features import build_matrices, compute_features
 
 

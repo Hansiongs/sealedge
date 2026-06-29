@@ -1,4 +1,4 @@
-.PHONY: help install install-dev test test-fast test-parallel test-cov test-bench lint format clean reproduce docs mutate mutate-stats mutate-show
+.PHONY: help install install-dev test test-fast test-parallel test-cov test-bench test-bench-compare test-bench-save bench-clean lint lint-ruff lint-mypy format clean reproduce docs-serve docs-build mutate mutate-fast mutate-stats mutate-show mutate-clean
 
 help:  ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -6,8 +6,17 @@ help:  ## Show this help message
 install:  ## Install package (runtime deps only)
 	pip install -e .
 
-install-dev:  ## Install package with dev + docs + paper extras
-	pip install -e ".[dev,docs,paper]"
+install-dev:  ## Install package with dev + docs extras
+	pip install -e ".[dev]" mkdocs mkdocs-material mkdocstrings-python mypy mutmut
+
+install-docs:  ## Install docs-only extras (for MkDocs)
+	pip install mkdocs mkdocs-material mkdocstrings-python
+
+lint-ruff:  ## Run ruff linter only
+	ruff check quant_lib/
+
+lint-mypy:  ## Run mypy type-checker only
+	mypy --ignore-missing-imports --no-strict-optional quant_lib/
 
 test:  ## Run all tests serially
 	pytest
@@ -35,7 +44,14 @@ bench-clean:  ## Remove stored benchmark history
 	rm -rf .benchmarks/
 
 mutate:  ## Run mutation testing on critical modules (candidate.py + commit.py)
-	mutmut run
+	# NOTE: mutmut requires Linux/WSL (no native Windows support).
+	# The CI workflow (mutation.yml) runs on Ubuntu weekly.
+	# See https://github.com/boxed/mutmut/issues/397
+	MUTMUT_RUNNING_IN_BATCH=1 mutmut run --max-children 4
+
+mutate-fast:  ## Run mutation testing with lower parallelism (for local dev)
+	# NOTE: mutmut requires Linux/WSL (no native Windows support).
+	MUTMUT_RUNNING_IN_BATCH=1 mutmut run --max-children 1
 
 mutate-stats:  ## Show mutation score statistics
 	mutmut stats
@@ -43,21 +59,37 @@ mutate-stats:  ## Show mutation score statistics
 mutate-show ID:  ## Show details of a specific surviving mutant
 	mutmut show $(ID)
 
-lint:  ## Run linter (ruff)
+mutate-clean:  ## Remove mutmut cache and generated mutants dir
+	rm -rf mutants/ .mutmut-cache
+	@echo "Cleared mutmut cache."
+
+lint:  ## Run linter (ruff) and type-checker (mypy)
 	ruff check quant_lib/
+	mypy --ignore-missing-imports --no-strict-optional quant_lib/
 
 format:  ## Auto-format code (ruff)
 	ruff format quant_lib/
 
-reproduce:  ## Run full pipeline to reproduce paper results
-	@echo "==> Running explore (Phase 0-3)..."
-	@python -c "from quant_lib import run_explore; r = run_explore('vol_compression_v1'); print('SPA p-value:', r['spa_p_value']); print('Final equity:', r['final_equity'])"
+reproduce:  ## Run full pipeline to reproduce paper results (EXP=vol_compression_v1)
+	@if [ -z "$(EXP)" ]; then \
+		echo "==> No EXP specified; using default: vol_compression_v1"; \
+		EXP=vol_compression_v1; \
+	fi
+	@if ! python -c "from quant_lib.experiments import all_experiments; assert '$$EXP' in [e.name for e in all_experiments()]" 2>/dev/null; then \
+		echo "ERROR: experiment '$$EXP' is not registered. Run 'quant_exp list' to see available experiments."; \
+		exit 1; \
+	fi
+	@echo "==> Running explore (Phase 0-3) for experiment '$$EXP'..."
+	@python -c "from quant_lib import run_explore; r = run_explore('$$EXP'); print('SPA p-value:', r['spa_p_value']); print('Final equity:', r['final_equity'])"
 	@echo ""
-	@echo "==> Running commit (Phase 4)..."
-	@python -c "from quant_lib import run_commit; r = run_commit('vol_compression_v1'); print('Final equity:', r.final_equity); print('PSR:', r.psr); print('Seal broken:', r.seal_broken)"
+	@echo "==> Running commit (Phase 4) for experiment '$$EXP'..."
+	@python -c "from quant_lib import run_commit; r = run_commit('$$EXP'); print('Final equity:', r.final_equity); print('PSR:', r.psr); print('Seal broken:', r.seal_broken)"
 
-docs:  ## Serve documentation locally (MkDocs)
-	@echo "MkDocs not yet configured."
+docs-serve:  ## Serve documentation locally (MkDocs, http://localhost:8000)
+	mkdocs serve
+
+docs-build:  ## Build static documentation to site/
+	mkdocs build
 
 clean:  ## Remove build artifacts
 	rm -rf build/ dist/ *.egg-info .pytest_cache .ruff_cache htmlcov/ .coverage .coverage.*

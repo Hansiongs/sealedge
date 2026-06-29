@@ -6,15 +6,11 @@ return well-defined structures.  Acts as a fast smoke check that the
 test infrastructure is healthy.
 """
 
-import inspect
-from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from tests.conftest import (
-    BTC_DATA_START,
     BTC_SEED,
     DAILY_CLOSE_SEED,
     DEFAULT_N_BARS_BTC,

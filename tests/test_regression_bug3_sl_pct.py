@@ -13,27 +13,20 @@ refactors that rename variables or restructure ``commit.py``.
 """
 
 import tempfile
-from datetime import timedelta
 
 import numpy as np
-import pandas as pd
-import pytest
 
-from quant_lib.audit import for_vol_compression
 from quant_lib.core._config import DEFAULTS
 from quant_lib.core._engine import fast_trade_loop
 from quant_lib.research.candidate import Candidate
 from quant_lib.research.commit import CommitResult, commit_to_holdout
-from quant_lib.research.session import ResearchSession
 
 from tests.conftest import (
-    BTC_DATA_START,
     HOLDOUT_PERIOD,
     TRAIN_PERIOD,
     _MockCache,
     DEFAULT_SYMBOLS,
     make_session_candidate,
-    make_synthetic_holdout_data,
 )
 
 

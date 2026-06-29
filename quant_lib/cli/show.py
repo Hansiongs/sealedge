@@ -31,7 +31,7 @@ def show(name: str = typer.Argument(..., help="Experiment name")) -> None:
         f"[bold]Entry:[/]      {h.entry_logic}",
         f"[bold]Exit:[/]       {h.exit_logic}",
         "",
-        f"[bold]Period:[/]",
+        "[bold]Period:[/]",
         f"  Train:   {train_s} \u2192 {train_e}",
         f"  Holdout: {hold_s} \u2192 {hold_e}",
         "",

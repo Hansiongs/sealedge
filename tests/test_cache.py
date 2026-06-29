@@ -3,12 +3,10 @@
 import os
 import tempfile
 import json
-import time
 from datetime import datetime, timedelta
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pandas as pd
-import pytest
 
 from quant_lib.research.cache import DataCache
 
@@ -16,7 +14,7 @@ from quant_lib.research.cache import DataCache
 class TestDataCache:
     def test_init_creates_dirs(self):
         with tempfile.TemporaryDirectory() as tmp:
-            cache = DataCache(cache_dir=tmp, ttl_days=7)
+            _cache = DataCache(cache_dir=tmp, ttl_days=7)
             assert os.path.exists(tmp)
             assert os.path.exists(os.path.join(tmp, "_meta"))
 

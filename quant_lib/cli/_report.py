@@ -12,7 +12,7 @@ tests inject pre-built stubs.
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Optional, Sequence
+from typing import Any, Callable, Optional
 
 
 ChartProvider = Callable[[str], Optional[str]]

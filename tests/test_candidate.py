@@ -6,7 +6,6 @@ import pytest
 from quant_lib.audit import for_vol_compression, for_pullback_sniper
 from quant_lib.experiments.base import StrategyConfig
 from quant_lib.research.session import ResearchSession
-from quant_lib.research.candidate import Candidate
 from quant_lib.research.exceptions import (
     NotReadyForCommit,
     InvalidStageTransition,

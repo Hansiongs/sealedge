@@ -2,7 +2,6 @@
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from quant_lib.core._config import DEFAULTS
 from quant_lib.core._engine import (
@@ -335,7 +334,6 @@ class TestStrategyDispatch:
         )
         from quant_lib.core._features import (
             STRATEGY_VOL_COMPRESSION as FEATURES_VOL,
-            STRATEGY_PULLBACK_SNIPER as FEATURES_PULLBACK,
         )
         from quant_lib.audit import (
             STRATEGY_VOL_COMPRESSION as AUDIT_VOL,

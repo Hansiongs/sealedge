@@ -16,7 +16,6 @@ test_wfa_coverage.py and test_spa_coverage.py separately.
 import tempfile
 from contextlib import contextmanager
 
-import numpy as np
 import pandas as pd
 import pytest
 

@@ -1,15 +1,13 @@
 """Direct unit tests for ``quant_lib.tools.stats`` (spa_test, prob_sharpe_ratio, fdr_correct)."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from quant_lib.core._config import DEFAULTS, STATIC
-from quant_lib.tools import stats as stats_mod
 from quant_lib.tools.stats import fdr_correct, prob_sharpe_ratio, spa_test
 
 

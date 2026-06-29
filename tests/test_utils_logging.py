@@ -206,7 +206,8 @@ class TestSetupLoggingForce:
 
     def test_call_twice_replaces_handlers(self):
         setup_logging()
-        handlers_after_first = list(logging.getLogger().handlers)
+        # We only need the post-second state; setup_logging's force=True
+        # should leave exactly one RichHandler after the second call.
         setup_logging()
         handlers_after_second = list(logging.getLogger().handlers)
         # Both RichHandlers should be present (one from each call)

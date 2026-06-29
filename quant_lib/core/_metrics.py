@@ -10,7 +10,6 @@ Extracted from Hans_Quant_Systems.py:
 
 import pandas as pd
 import numpy as np
-from typing import Any
 from rich.table import Table
 
 from quant_lib.core._config import STATIC, GLOBAL_SEED
@@ -118,7 +117,10 @@ def compute_regime_stats(executed_trades: list[dict]) -> dict[str, tuple[float, 
     }
 
 
-def print_param_stability(all_fold_params: dict[str, list[dict]], symbols: list[str]) -> None:
+def print_param_stability(
+    all_fold_params: dict[str, list[dict]],
+    symbols: list[str],
+) -> None:
     """Print fold-by-fold parameter stability analysis with CV metrics."""
     PARAM_NAMES = ["vol_pct_thresh", "pullback_bars", "trail_atr", "sl_mult"]
 
@@ -163,8 +165,9 @@ def print_param_stability(all_fold_params: dict[str, list[dict]], symbols: list[
             )
         console.print(tbl)
 
-        # Stability metrics
-        param_vals = {pn: [] for pn in PARAM_NAMES}
+        # Stability metrics. Explicit type annotation: dict literal
+        # comprehension infers list[Unknown] which fails mypy strict.
+        param_vals: dict[str, list[float]] = {pn: [] for pn in PARAM_NAMES}
         for fp in folds:
             for pn in PARAM_NAMES:
                 v = fp.get(pn)
@@ -188,13 +191,15 @@ def print_param_stability(all_fold_params: dict[str, list[dict]], symbols: list[
         stbl_tbl.add_column("Rating", justify="center")
 
         for pn in PARAM_NAMES:
-            vals = param_vals[pn]
-            if len(vals) < 2:
+            # Renamed from `vals` to avoid conflict with the outer
+            # `vals: list[str]` declared at line 152 (table rows).
+            param_vals_for_pn: list[float] = param_vals[pn]
+            if len(param_vals_for_pn) < 2:
                 continue
-            mean_v = float(np.mean(vals))
-            std_v = float(np.std(vals, ddof=1))
-            min_v = float(np.min(vals))
-            max_v = float(np.max(vals))
+            mean_v = float(np.mean(param_vals_for_pn))
+            std_v = float(np.std(param_vals_for_pn, ddof=1))
+            min_v = float(np.min(param_vals_for_pn))
+            max_v = float(np.max(param_vals_for_pn))
             cv = (std_v / abs(mean_v)) * 100 if abs(mean_v) > 1e-10 else 0.0
 
             if cv < 15:
@@ -223,9 +228,14 @@ def print_param_stability(all_fold_params: dict[str, list[dict]], symbols: list[
         if len(folds) >= 2:
             cvs = []
             for pn in PARAM_NAMES:
-                vals = param_vals[pn]
-                if len(vals) >= 2:
-                    cv_p = (float(np.std(vals, ddof=1)) / abs(float(np.mean(vals)))) * 100
+                # Renamed from `vals` to avoid conflict with the
+                # `list[str]` declared at line 152 (table rows).
+                cv_inner: list[float] = param_vals[pn]
+                if len(cv_inner) >= 2:
+                    cv_p = (
+                        float(np.std(cv_inner, ddof=1))
+                        / abs(float(np.mean(cv_inner)))
+                    ) * 100
                     cvs.append(cv_p)
             if cvs:
                 mean_cv = float(np.mean(cvs))
@@ -256,9 +266,18 @@ def print_param_stability(all_fold_params: dict[str, list[dict]], symbols: list[
         cvs = []
         row_vals = []
         for pn in PARAM_NAMES:
-            vals = [fp.get(pn) for fp in folds if fp.get(pn) is not None]
-            if len(vals) >= 2:
-                cv_p = (float(np.std(vals, ddof=1)) / abs(float(np.mean(vals)))) * 100
+            # fp.get(pn) is float | None; the None filter narrows to float
+            # but mypy can't see through the comprehension. Renamed from
+            # `vals` to avoid conflict with the outer `vals: list[str]`
+            # used for the table row (line 152).
+            param_vals_inner: list[float] = [
+                fp.get(pn) for fp in folds if fp.get(pn) is not None
+            ]
+            if len(param_vals_inner) >= 2:
+                cv_p = (
+                    float(np.std(param_vals_inner, ddof=1))
+                    / abs(float(np.mean(param_vals_inner)))
+                ) * 100
             else:
                 cv_p = 0.0
             cvs.append(cv_p)
@@ -288,9 +307,17 @@ def print_param_stability(all_fold_params: dict[str, list[dict]], symbols: list[
             continue
         cvs = []
         for pn in ["vol_pct_thresh", "trail_atr", "sl_mult"]:
-            vals = [fp.get(pn) for fp in folds if fp.get(pn) is not None]
-            if len(vals) >= 2:
-                cv_p = (float(np.std(vals, ddof=1)) / abs(float(np.mean(vals)))) * 100
+            # Same pattern as above; renamed to `unstable_vals` to
+            # avoid conflict with the `param_vals_inner` declared
+            # earlier in the function.
+            unstable_vals: list[float] = [
+                fp.get(pn) for fp in folds if fp.get(pn) is not None
+            ]
+            if len(unstable_vals) >= 2:
+                cv_p = (
+                    float(np.std(unstable_vals, ddof=1))
+                    / abs(float(np.mean(unstable_vals)))
+                ) * 100
                 cvs.append(cv_p)
         avg_cv = float(np.mean(cvs)) if cvs else 0
         if avg_cv > 30:

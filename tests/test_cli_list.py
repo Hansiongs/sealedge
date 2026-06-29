@@ -7,8 +7,6 @@ to assert on the printed output.
 from __future__ import annotations
 
 import io
-from contextlib import contextmanager
-from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -21,7 +19,6 @@ from quant_lib.experiments import (
     PeriodConfig,
     StrategyConfig,
     UniverseConfig,
-    all_experiments,
     clear,
     register,
 )

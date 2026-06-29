@@ -1,13 +1,14 @@
 """Tests for audit module — Hypothesis, ExperimentLog, HoldoutSet."""
 
-import json
-import tempfile
-from datetime import datetime, timezone
 
-import pandas as pd
 import pytest
 
-from quant_lib.audit.hypothesis import Hypothesis
+from quant_lib.audit import StrategyType
+from quant_lib.audit.hypothesis import (
+    Hypothesis,
+    STRATEGY_VOL_COMPRESSION,
+    STRATEGY_PULLBACK_SNIPER,
+)
 from quant_lib.audit.journal import ExperimentLog
 from quant_lib.audit.holdout import HoldoutSet, HoldoutSeal
 
@@ -84,6 +85,103 @@ class TestHypothesis:
         )
         with pytest.raises(AttributeError):
             h.name = "new_name"
+
+
+class TestStrategyTypeEnum:
+    """Tests for the ``StrategyType`` IntEnum and its backwards-
+    compat aliases.
+
+    The enum is a type-safety improvement over the legacy
+    ``STRATEGY_VOL_COMPRESSION = 0`` / ``STRATEGY_PULLBACK_SNIPER = 1``
+    raw int constants, but the int constants must stay available
+    so existing engine code (Numba hot path) and re-exports
+    (``from quant_lib.audit import STRATEGY_VOL_COMPRESSION``) keep
+    working.
+    """
+
+    def test_enum_values_match_legacy_constants(self):
+        """The IntEnum values are exactly the legacy int values."""
+        assert int(StrategyType.VOL_COMPRESSION) == STRATEGY_VOL_COMPRESSION
+        assert int(StrategyType.PULLBACK_SNIPER) == STRATEGY_PULLBACK_SNIPER
+        assert int(StrategyType.VOL_COMPRESSION) == 0
+        assert int(StrategyType.PULLBACK_SNIPER) == 1
+
+    def test_enum_compares_equal_to_legacy_ints(self):
+        """Comparing an enum member to the legacy int constant returns
+        True, so call sites can use either form transparently."""
+        assert StrategyType.VOL_COMPRESSION == 0
+        assert StrategyType.PULLBACK_SNIPER == 1
+        # And legacy int constant is also an int (not an enum).
+        assert isinstance(STRATEGY_VOL_COMPRESSION, int)
+        assert not isinstance(STRATEGY_VOL_COMPRESSION, StrategyType)
+
+    def test_legacy_constants_are_int_not_enum(self):
+        """``STRATEGY_VOL_COMPRESSION`` is a plain ``int``, not a
+        ``StrategyType`` member. This is important because the
+        engine's Numba-compiled ``fast_trade_loop`` expects a raw
+        int parameter; passing a StrategyType would break Numba
+        type inference."""
+        assert type(STRATEGY_VOL_COMPRESSION) is int
+        assert type(STRATEGY_PULLBACK_SNIPER) is int
+
+    def test_hypothesis_accepts_enum_value(self):
+        """Constructing a Hypothesis with a ``StrategyType`` member
+        works (it's an IntEnum, so equality-comparable to int)."""
+        h = Hypothesis(
+            name="enum_test",
+            mechanism="m",
+            boundary_conditions="b",
+            success_criteria="s",
+            entry_logic="e",
+            exit_logic="x",
+            strategy_type=StrategyType.PULLBACK_SNIPER,
+        )
+        # Internally stored as int for JSON-serializable round-trips.
+        assert h.strategy_type == 1
+        assert h.strategy_name == "pullback_sniper"
+
+    def test_hypothesis_accepts_legacy_int(self):
+        """The legacy int form still works (backwards compat)."""
+        h = Hypothesis(
+            name="legacy_test",
+            mechanism="m",
+            boundary_conditions="b",
+            success_criteria="s",
+            entry_logic="e",
+            exit_logic="x",
+            strategy_type=STRATEGY_VOL_COMPRESSION,
+        )
+        assert h.strategy_type == 0
+        assert h.strategy_name == "vol_compression_breakout"
+
+    def test_unknown_strategy_type_returns_unknown(self):
+        """A bogus int (e.g. 99) yields the ``unknown_<N>`` fallback
+        so we don't silently misbehave on schema drift."""
+        h = Hypothesis(
+            name="bogus",
+            mechanism="m",
+            boundary_conditions="b",
+            success_criteria="s",
+            entry_logic="e",
+            exit_logic="x",
+            strategy_type=99,
+        )
+        assert h.strategy_name == "unknown_99"
+
+    def test_hypothesis_to_dict_keeps_int_strategy_type(self):
+        """to_dict serialises strategy_type as int (JSON-friendly)."""
+        h = Hypothesis(
+            name="ser_test",
+            mechanism="m",
+            boundary_conditions="b",
+            success_criteria="s",
+            entry_logic="e",
+            exit_logic="x",
+            strategy_type=StrategyType.VOL_COMPRESSION,
+        )
+        d = h.to_dict()
+        assert d["strategy_type"] == 0
+        assert isinstance(d["strategy_type"], int)
 
 
 class TestExperimentLog:

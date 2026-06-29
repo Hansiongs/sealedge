@@ -8,10 +8,8 @@ Targets:
 - Session recording + journal logging
 """
 
-import hashlib
 import tempfile
-from datetime import datetime, timedelta
-from unittest.mock import patch
+from datetime import timedelta
 
 import numpy as np
 import pandas as pd
@@ -24,8 +22,6 @@ from quant_lib.research.exceptions import (
     CommitError,
     HoldoutAlreadyBroken,
     NotReadyForCommit,
-    SealVerificationFailed,
-    SessionError,
 )
 from quant_lib.research.session import ResearchSession
 from tests.conftest import _MockCache  # M-2: shared mock cache helper
@@ -681,9 +677,9 @@ class TestC2PreCommitHash:
 
             # Session's hash must be UNCHANGED (because session has its own copy)
             assert session._holdout_hash == hash_before_mutation, (
-                f"Session hash changed after in-place mutation of caller's data! "
-                f"Pre-fix: shallow copy means session sees the mutation. "
-                f"Post-fix: deepcopy provides isolation."
+                "Session hash changed after in-place mutation of caller's data! "
+                "Pre-fix: shallow copy means session sees the mutation. "
+                "Post-fix: deepcopy provides isolation."
             )
 
     def test_tampering_high_column_detected(self):

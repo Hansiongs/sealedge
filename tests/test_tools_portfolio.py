@@ -6,7 +6,6 @@ from unittest.mock import patch
 
 import pytest
 
-from quant_lib.tools import portfolio as portfolio_mod
 from quant_lib.tools.portfolio import simulate_portfolio
 
 

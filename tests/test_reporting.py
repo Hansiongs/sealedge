@@ -8,17 +8,15 @@ Targets:
 """
 
 import io
-import re
 import tempfile
-from datetime import datetime, timedelta
+from datetime import timedelta
 from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
-import pytest
 from rich.console import Console
 
-from quant_lib.audit import for_vol_compression, for_pullback_sniper
+from quant_lib.audit import for_vol_compression
 from quant_lib.research.candidate import Candidate
 from quant_lib.research.commit import CommitResult
 from quant_lib.research.reporting import print_candidate_report, print_commit_report

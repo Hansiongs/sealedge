@@ -5,6 +5,8 @@ on:
     branches: [main, master, develop]
   pull_request:
     branches: [main, master, develop]
+  # Manual trigger via the Actions tab for ad-hoc validation.
+  workflow_dispatch:
 
 # Cancel in-flight runs on the same branch when a new commit lands.
 concurrency:
@@ -13,13 +15,19 @@ concurrency:
 
 jobs:
   test:
-    name: pytest (${{ matrix.python-version }}, ${{ matrix.os }})
+    name: pytest (Python ${{ matrix.python-version }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
+      # Python 3.10 is the minimum supported version (pyproject.toml
+      # requires-python = ">=3.10"). 3.13 is the latest stable; if
+      # the framework breaks on 3.13 we want to know in CI, not in
+      # production. Windows runner catches path-separator bugs
+      # that Ubuntu-only CI misses (the codebase has Windows-aware
+      # code paths in conftest, status_cmd, migrate_seals).
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
-        os: [ubuntu-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        os: [ubuntu-latest, windows-latest]
 
     steps:
       - name: Check out repository
@@ -32,13 +40,23 @@ jobs:
           cache: "pip"
 
       - name: Install package + dev dependencies
+        # ``[dev]`` includes pytest, hypothesis, etc. mypy + mutmut
+        # are installed separately because they're optional extras
+        # not always needed for the main test job.
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
+          pip install mypy
 
       - name: Run tests (parallel via xdist)
+        # xdist is xdist-safe (conftest uses per-PID seal dirs).
+        # We disable the network tests by setting OFFLINE=1 because
+        # crypto API calls in tests are flaky and not what we want
+        # to gate on for every PR.
         run: |
-          pytest -n auto --dist=loadfile --cov=quant_lib --cov-report=xml --cov-report=term
+          OFFLINE=1 pytest -n auto --dist=loadfile \
+            --cov=quant_lib --cov-branch \
+            --cov-report=xml --cov-report=term
 
       - name: Enforce coverage threshold
         # pyproject.toml sets fail_under = 70; this is a belt-and-braces
@@ -48,9 +66,55 @@ jobs:
           coverage report --fail-under=70
 
       - name: Upload coverage to Codecov
-        if: matrix.python-version == '3.12'
+        # Only the canonical matrix entry (Ubuntu + Python 3.12) uploads
+        # to Codecov, to avoid duplicate uploads and noise in the trend
+        # graph. Other matrix entries still produce coverage.xml so
+        # devs can inspect the per-OS coverage locally.
+        if: matrix.python-version == '3.12' && matrix.os == 'ubuntu-latest'
         uses: codecov/codecov-action@v4
         with:
           file: coverage.xml
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload coverage artifact (Windows runner)
+        # Codecov is a single-trend source for Linux coverage; the
+        # Windows coverage.xml is archived so we can diff platforms
+        # in case of path-separator or fs-related regressions.
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-windows-${{ matrix.python-version }}
+          path: coverage.xml
+          retention-days: 7
+
+  verify-badge:
+    name: verify README test-count badge
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Collect test count
+        id: collect
+        run: |
+          pip install pytest
+          count=$(pytest --collect-only -q 2>&1 | tail -1 | grep -oP '^\d+')
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+
+      - name: Check badge matches
+        run: |
+          count=${{ steps.collect.outputs.count }}
+          if ! grep -q "tests-${count}_passing" README.md; then
+            echo "❌ README badge says $(grep -oP 'tests-\d+_passing' README.md | grep -oP '\d+'), "
+            echo "   but pytest --collect-only reports $count tests."
+            echo "   Update the badge in README.md: s/tests-..._passing/tests-${count}_passing/"
+            exit 1
+          fi
+          echo "✅ README badge matches collected count ($count)."

@@ -136,7 +136,7 @@ def explore(
 
     console.print()
     console.print(f"[green]\u2713[/green] Results saved: [bold]{out.path}[/bold]")
-    console.print(f"[green]\u2713[/green] Holdout seal: INTACT (commit still possible)")
+    console.print("[green]\u2713[/green] Holdout seal: INTACT (commit still possible)")
 
 
 def _try_save_html_report(

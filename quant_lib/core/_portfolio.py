@@ -103,6 +103,72 @@ def _mtm_and_margin_check(
         return False, pnl, None, cur_price
 
 
+def _build_events(trades: list[dict[str, Any]]) -> list[dict]:
+    """Build sorted event list (ENTRY/EXIT) from raw trades.
+
+    Each trade generates exactly two events: an ENTRY at entry_time
+    and an EXIT at exit_time (with a 1-second offset if it matches
+    the entry to avoid simultaneous ENTRY+EXIT on the same trade).
+    Events are sorted by time, with EXIT processed before ENTRY
+    within the same timestamp to prevent over-subscription on the
+    bar boundary, and by symbol for deterministic order.
+    """
+    events = []
+    for t in trades:
+        events.append({"time": t["entry_time"], "type": "ENTRY", "trade": t})
+        ext = t["exit_time"]
+        if ext == t["entry_time"]:
+            ext += timedelta(seconds=1)
+        events.append({"time": ext, "type": "EXIT", "trade": t})
+    events.sort(key=lambda x: (
+        x["time"], 0 if x["type"] == "EXIT" else 1, x["trade"]["symbol"]
+    ))
+    return events
+
+
+def _init_circuit_breakers(
+    asset_risk_weights: dict[str, float],
+    fixed_cb_threshold: float,
+    initial_cash: float,
+) -> tuple[
+    dict[str, float],   # asset_initial_alloc
+    dict[str, float],   # asset_realized_pnl
+    dict[str, float],   # asset_peak_equity
+    dict[str, bool],    # cb_asset_active
+    dict[str, object],  # cb_asset_until (pd.Timestamp)
+    float,              # per-asset CB threshold
+]:
+    """Initialize per-asset circuit breaker state.
+
+    Returns parallel dicts keyed by symbol, all derived from the
+    asset risk weights. When no risk weights are provided, returns
+    empty/zero state and the caller skips CB logic.
+    """
+    _per_asset_cb_threshold = fixed_cb_threshold
+    asset_initial_alloc: dict[str, float] = {}
+    asset_realized_pnl: dict[str, float] = {}
+    asset_peak_equity: dict[str, float] = {}
+    cb_asset_active: dict[str, bool] = {}
+    cb_asset_until: dict[str, object] = {}
+    if asset_risk_weights:
+        total_rw = sum(asset_risk_weights.values())
+        for sym, rw in asset_risk_weights.items():
+            alloc = initial_cash * (rw / total_rw)
+            asset_initial_alloc[sym] = alloc
+            asset_realized_pnl[sym] = 0.0
+            asset_peak_equity[sym] = alloc
+            cb_asset_active[sym] = False
+            cb_asset_until[sym] = pd.Timestamp.min
+    return (
+        asset_initial_alloc,
+        asset_realized_pnl,
+        asset_peak_equity,
+        cb_asset_active,
+        cb_asset_until,
+        _per_asset_cb_threshold,
+    )
+
+
 def simulate_full_portfolio(
     trades: list[dict[str, Any]],
     initial_cash: float,
@@ -120,39 +186,27 @@ def simulate_full_portfolio(
     _precomputed_sym_list: list | None = None,
     _shared_corr_cache: dict | None = None,
 ) -> tuple[float, dict, list, _RejectReasons]:
-    events = []
-    for t in trades:
-        events.append({"time": t["entry_time"], "type": "ENTRY", "trade": t})
-        ext = t["exit_time"]
-        if ext == t["entry_time"]:
-            ext += timedelta(seconds=1)
-        events.append({"time": ext, "type": "EXIT", "trade": t})
-    events.sort(key=lambda x: (x["time"], 0 if x["type"] == "EXIT" else 1, x["trade"]["symbol"]))
+    events = _build_events(trades)
 
     cash = initial_cash
     peak_equity = cash
-    open_positions = {}
+    open_positions: dict[tuple[str, Any, Any, int], dict] = {}
     daily_equity = {}
     current_day = None
     executed_trades = []
     reject_reasons = {"cb_cooldown": 0, "position_limit": 0, "margin_insufficient": 0}
 
     # Per-asset circuit breaker
-    _per_asset_cb_threshold = fixed_cb_threshold
-    asset_initial_alloc = {}
-    asset_realized_pnl = {}
-    asset_peak_equity = {}
-    cb_asset_active = {}
-    cb_asset_until = {}
-    if asset_risk_weights:
-        total_rw = sum(asset_risk_weights.values())
-        for sym, rw in asset_risk_weights.items():
-            alloc = initial_cash * (rw / total_rw)
-            asset_initial_alloc[sym] = alloc
-            asset_realized_pnl[sym] = 0.0
-            asset_peak_equity[sym] = alloc
-            cb_asset_active[sym] = False
-            cb_asset_until[sym] = pd.Timestamp.min
+    (
+        asset_initial_alloc,
+        asset_realized_pnl,
+        asset_peak_equity,
+        cb_asset_active,
+        cb_asset_until,
+        _per_asset_cb_threshold,
+    ) = _init_circuit_breakers(
+        asset_risk_weights, fixed_cb_threshold, initial_cash,
+    )
 
     # Rolling correlation for sizing (no lookahead)
     if _precomputed_daily_returns is not None and _precomputed_sym_list is not None:

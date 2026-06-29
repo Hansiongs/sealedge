@@ -100,8 +100,11 @@ def from_hypothesis(
 # Auto-discover experiments on import. This populates the registry with
 # any experiments found in this package. Idempotent: subsequent imports
 # are no-ops (cached in sys.modules and the _DISCOVERED flag in built_in).
-from . import built_in
-from .built_in import discover_experiments
+# These imports are placed after `from_hypothesis` so that any user
+# experiment file importing `from_hypothesis` (or the registry helpers)
+# before its own `@register` decorator can rely on them being defined.
+from . import built_in  # noqa: E402
+from .built_in import discover_experiments  # noqa: E402
 
 # Trigger initial discovery.
 discover_experiments()

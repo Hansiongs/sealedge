@@ -2,7 +2,7 @@
 import pytest
 
 from quant_lib import run_commit, run_explore
-from quant_lib.experiments import clear, get
+from quant_lib.experiments import clear
 from quant_lib.experiments.built_in import reset as reset_discovery
 
 
@@ -91,7 +91,6 @@ class TestErrorHandling:
         """
         # Just verify the function can be called without import errors
         # (the actual run may need network/data which we don't mock here)
-        import inspect
         # Verify the function signature accepts a string
         try:
             result = run_explore("vol_compression_v1")

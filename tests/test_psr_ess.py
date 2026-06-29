@@ -7,13 +7,11 @@ weighted-mode functionality is now provided by
 """
 
 import numpy as np
-import pytest
 from scipy import stats as scipy_stats
 
 from quant_lib.core._testing import (
     prob_sharpe_ratio,
     fdr_correction,
-    label_p_value,
 )
 
 
@@ -250,4 +248,4 @@ class TestPSRandFDRIntegration:
         assert len(rejected) == 5
         assert len(p_corr) == 5
         # The first 2 should likely be significant
-        assert rejected[0] == True or rejected[1] == True
+        assert rejected[0] or rejected[1]

@@ -15,16 +15,13 @@ benchmarking, the former is the CI gate.
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
-from quant_lib.core._config import DEFAULTS
 from quant_lib.core._engine import (
-    EngineArgs,
     fast_trade_loop,
 )
 from quant_lib.tools.backtest import run_trade_loop
 
-from tests.conftest import make_engine_args, make_engine_arrays
+from tests.conftest import make_engine_args
 
 
 # ═══════════════════════════════════════════════════════════════════════

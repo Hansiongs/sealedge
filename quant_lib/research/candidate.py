@@ -11,7 +11,6 @@ is propagated through the candidate and used by the WFA engine.
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal, Optional, Callable
 import pandas as pd
-import numpy as np
 
 from quant_lib.audit import Hypothesis
 from quant_lib.core._features import prepare_data_with_max_time
@@ -29,7 +28,6 @@ from quant_lib.experiments.base import StrategyConfig
 from quant_lib.research.exceptions import (
     CandidateError,
     InvalidStageTransition,
-    MissingFrozenParams,
     NotReadyForCommit,
 )
 
@@ -503,8 +501,15 @@ class Candidate:
         """Transition to the terminal 'ready' stage after validation.
 
         Idempotent: safe to call multiple times. Raises
-        ``NotReadyForCommit`` if the candidate hasn't completed narrowing
-        or has no frozen params.
+        ``NotReadyForCommit`` if the candidate hasn't completed narrowing,
+        has no frozen params, or hasn't met the minimum training months
+        requirement.
+
+        The ``min_train_months`` guard is enforced here (defense in depth)
+        and again in ``commit_to_holdout`` (commit.py). A caller that
+        creates a Candidate outside the normal flow (e.g. bypassing
+        ``run_edge_testing``) is caught early rather than failing at
+        commit time.
         """
         if self.stage == "ready":
             return
@@ -523,6 +528,24 @@ class Candidate:
             raise NotReadyForCommit(
                 f"Candidate '{self.hypothesis.name}' has no frozen_params.",
                 phase=self.hypothesis.name,
+            )
+        # Phase 3.7 E4 / Phase 4: min_train_months enforcement.
+        # The hypothesis specifies the minimum training months required.
+        # If the actual training period is shorter, refuse to mark ready.
+        # This duplicates the check in commit_to_holdout (commit.py:189-203)
+        # as defense-in-depth: callers that go directly to mark_ready()
+        # without going through the full commit path are still protected.
+        train_start, train_end = self.session.training_period
+        n_train_months = (
+            (pd.Timestamp(train_end) - pd.Timestamp(train_start)).days / 30.44
+        )
+        if n_train_months < self.hypothesis.min_train_months:
+            raise NotReadyForCommit(
+                f"Candidate '{self.hypothesis.name}': training period "
+                f"({n_train_months:.1f}mo) is shorter than hypothesis "
+                f"min_train_months ({self.hypothesis.min_train_months}mo). "
+                f"Adjust the training period in the experiment config or "
+                f"relax min_train_months in the hypothesis.",
             )
         self._set_stage("ready")
 

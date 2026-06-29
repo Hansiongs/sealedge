@@ -168,7 +168,14 @@ class ExperimentLog:
         float
             Adjusted alpha level for the next test.
         """
-        n_tests = self.n_experiments
+        # ``n_tests`` is annotated float from the start because the
+        # half-weight ablation contribution (``* 0.5``) deliberately
+        # makes the count fractional. The Bonferroni-adjusted alpha
+        # ``initial_alpha / (n_tests + 1)`` then uses the same
+        # formula Bailey & Lopez de Prado describe in the
+        # deflated-SR literature. Without the float annotation,
+        # mypy flags the int+float assignment as incompatible.
+        n_tests: float = self.n_experiments
         if discount_ablations:
             # NOTE (0.2.2): Was subtract (bug — ablations are disjoint from
             # n_experiments, so subtracting undercounted tests and made

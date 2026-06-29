@@ -2,7 +2,6 @@
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from quant_lib.core._metrics import (
     build_daily_matrices,

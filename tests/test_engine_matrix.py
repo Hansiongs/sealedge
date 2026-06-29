@@ -342,7 +342,10 @@ class TestEngineEdgeCases:
         scalar divide`` warnings are expected for n=0 inputs; this
         test exercises the boundary case by design.
         """
-        arrays = make_engine_arrays(n=0, seed=42)
+        # ``arrays`` is created for symmetry with other boundary tests
+        # but not directly consumed; the actual coverage comes from
+        # ``args.as_tuple()`` below.
+        _arrays = make_engine_arrays(n=0, seed=42)
         args = _build_engine_args(n=0)
         result = fast_trade_loop(*args.as_tuple())
         assert len(result) == 10

@@ -12,13 +12,8 @@ Verifies:
 from __future__ import annotations
 
 import base64
-import os
-import tempfile
-from pathlib import Path
-from typing import Any
 
 import pandas as pd
-import pytest
 
 from quant_lib.research import plotting
 
@@ -288,7 +283,6 @@ class TestPlotSpaNull:
 
     def test_pvalue_nan_handled(self):
         """NaN p-value is rendered with 'NaN' in the title, not crashed."""
-        import numpy as np
         result = plotting.plot_spa_null(
             _spa_null_equities(), observed_equity=1300, p_value=float("nan"),
         )
@@ -307,7 +301,6 @@ class TestPlotSpaNull:
 
     def test_drops_inf_from_null(self):
         """Inf values in null are dropped before plotting."""
-        import numpy as np
         mixed = [1000, 1100, float("inf"), 950, -float("inf"), 1050]
         result = plotting.plot_spa_null(mixed, observed_equity=1300, p_value=0.03)
         assert result.startswith("data:image/png;base64,")
@@ -432,7 +425,6 @@ class TestPlotWfaProgression:
 
     def test_drops_nan_best_value(self):
         """Folds with non-finite best_value are dropped, not crashed."""
-        import numpy as np
         params = {
             "BTCUSDT": [
                 {"best_value": 0.5},
@@ -499,7 +491,6 @@ class TestMatplotlibBackend:
 
     def test_seaborn_theme_applied(self):
         """Seaborn theme is applied (rcParams reflect it)."""
-        import matplotlib as mpl
         # whitegrid style sets axes.facecolor and grid presence
         # The exact rcParams depend on seaborn version; just verify
         # the theme is recognized.

@@ -21,7 +21,6 @@ import importlib
 import inspect
 from pathlib import Path
 
-import pytest
 
 import quant_lib
 

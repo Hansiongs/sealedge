@@ -8,11 +8,8 @@ functions directly with synthetic data, isolating them from the
 ``test_universe_filter.py``.
 """
 
-from datetime import datetime, timedelta
 
-import numpy as np
 import pandas as pd
-import pytest
 
 from quant_lib.tools.universe import filter_by_volume_rank, select_universe
 

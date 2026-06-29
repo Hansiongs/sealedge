@@ -1,7 +1,6 @@
 """quant_exp list -- List all registered experiments."""
 from __future__ import annotations
 
-import typer
 from rich.table import Table
 
 from quant_lib.experiments import all_experiments

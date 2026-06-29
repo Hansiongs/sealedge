@@ -251,7 +251,7 @@ class TestBuildExploreReport:
             requested.append(name)
             return "data:image/png;base64,FAKE"
 
-        sections = build_explore_report(cand, cand.session, tracking_provider)
+        _sections = build_explore_report(cand, cand.session, tracking_provider)
         assert "trade_distribution" not in requested
         assert "equity_curve" in requested
         assert "drawdown_underwater" in requested

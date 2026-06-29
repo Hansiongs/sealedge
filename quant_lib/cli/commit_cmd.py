@@ -53,7 +53,7 @@ def commit(
 
     console.print(Rule(f"[bold red]COMMIT: {exp.name}[/bold red]", style="red"))
     console.print(
-        f"  [red]\u26a0 This will BREAK the holdout seal (irreversible).[/red]"
+        "  [red]\u26a0 This will BREAK the holdout seal (irreversible).[/red]"
     )
     console.print(f"  Holdout:  {hold_s} \u2192 {hold_e}")
     console.print(f"  Strategy: {exp.strategy_type}")
@@ -150,7 +150,7 @@ def commit(
     console.print()
     console.print(f"[green]\u2713[/green] Results saved: [bold]{out.path}[/bold]")
     console.print(
-        f"[red]\u2713[/red] Seal [bold]BROKEN[/bold]. This holdout cannot be used again."
+        "[red]\u2713[/red] Seal [bold]BROKEN[/bold]. This holdout cannot be used again."
     )
 
 
@@ -235,7 +235,11 @@ def _make_chart_provider(
     # is available, but it isn't a cumulated PnL. We render a placeholder
     # equity curve from the result's by_symbol_stats (sum of R).
     daily_equity = _build_equity_series_from_result(result)
-    r_vals = []  # commit path doesn't expose r_vals directly here
+    # commit path doesn't expose r_vals directly here. The list is
+    # passed to plot_trade_distribution() which is graceful with empty
+    # input. Type annotation is required because mypy can't infer a
+    # list literal in a nested closure with no later assignment.
+    r_vals: list[float] = []
 
     def provider(name: str):
         try:

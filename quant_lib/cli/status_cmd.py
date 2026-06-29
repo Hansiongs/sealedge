@@ -2,16 +2,26 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 
-import typer
 from rich.table import Table
 
 from quant_lib.core._logging import console
 
 
-_SEAL_DIR = Path("data_cache/holdout_seals")
+# Seal directory discovery:
+#   1. QUANT_LIB_SEAL_DIR env var (if set, takes precedence)
+#   2. <cwd>/data_cache/holdout_seals (default for ad-hoc runs)
+#
+# ResearchSession writes seals to ``os.path.join(cache_dir, "holdout_seals")``
+# unless ``seal_dir`` is passed explicitly. For a CLI user running
+# ``quant_exp status``, the cache dir is typically ``./data_cache``, so
+# this default matches. Users with non-default cache_dir should set
+# QUANT_LIB_SEAL_DIR to point at the correct location.
+_DEFAULT_SEAL_DIR = Path("data_cache/holdout_seals")
+_SEAL_DIR = Path(os.environ.get("QUANT_LIB_SEAL_DIR", str(_DEFAULT_SEAL_DIR)))
 _RESULTS_DIR = Path("results")
 
 # Regex to parse OutputManager's dir_name format:

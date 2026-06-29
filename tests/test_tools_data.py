@@ -5,15 +5,10 @@ the ``tools.data`` layer correctly delegates and processes results.
 """
 from __future__ import annotations
 
-import tempfile
-from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 
-import numpy as np
 import pandas as pd
-import pytest
 
-from quant_lib.tools import data as data_mod
 
 
 def _fetch_klines(*args, **kwargs):

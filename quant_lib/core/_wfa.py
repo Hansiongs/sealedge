@@ -8,7 +8,6 @@ Extracted from Hans_Quant_Systems.py:
   - run_wfa_per_symbol (lines 2180-2517)
 """
 
-import logging
 import numpy as np
 from numpy import ndarray
 import pandas as pd
@@ -18,8 +17,8 @@ from scipy import stats as scipy_stats
 from datetime import timedelta
 from typing import Any
 
-from quant_lib.core._config import STATIC, GLOBAL_SEED, WARMUP_BARS, DEFAULTS
-from quant_lib.core._logging import log, console
+from quant_lib.core._config import STATIC, GLOBAL_SEED, DEFAULTS
+from quant_lib.core._logging import console
 from quant_lib.core._engine import fast_trade_loop
 
 _FoldParamsList = list[dict[str, Any]]
@@ -167,7 +166,6 @@ class WalkForwardObjective:
         )
         pnl_array = result[0]
         idx_entry = result[1]
-        trend_mults = result[9]
 
         n_trades = len(pnl_array)
         if n_trades < 15:

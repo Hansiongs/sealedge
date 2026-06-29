@@ -2,7 +2,6 @@
 Statistical testing tools -- SPA, PSR, FDR correction.
 """
 
-import numpy as np
 from numpy import ndarray
 import pandas as pd
 

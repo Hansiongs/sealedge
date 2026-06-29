@@ -1,0 +1,40 @@
+Mutation Baseline
+=================
+Date: To be captured — first CI run (mutation.yml, weekly Monday 03:00 UTC)
+Scope: quant_lib/research/candidate.py + commit.py (pyproject.toml [tool.mutmut])
+Method: mutmut run --max-children 4
+
+Capturing the baseline
+----------------------
+The CI workflow `.github/workflows/mutation.yml` runs on Ubuntu every
+Monday 03:00 UTC and on manual trigger (workflow_dispatch). The first
+run will produce the baseline; subsequent runs should be compared
+against it.
+
+To capture locally (Linux/WSL):
+    MUTMUT_RUNNING_IN_BATCH=1 mutmut run --max-children 4
+    mutmut stats
+
+Triggering from GitHub Actions UI
+----------------------------------
+1. Open https://github.com/Hansiongs/hans-backtest/actions/workflows/mutation.yml
+2. Click "Run workflow" ▾ (dropdown on the right)
+3. Branch: main
+4. Click "Run workflow"
+
+The workflow runs mutmut on Ubuntu. After completion:
+1. Download the `mutmut-report` artifact from the workflow run
+2. Extract `mutation_score.txt` — this is the baseline
+3. Copy the score here:
+   - Baseline score: _______ (populate from artifact)
+   - Date: _______ (populate from artifact)
+
+Expected score
+--------------
+(TBD — populated from first CI run artifact)
+
+Threshold
+---------
+The mutation score should not drop by more than 5 percentage points
+between releases. If it does, the new code is insufficiently tested
+and needs additional coverage before release.

@@ -9,8 +9,10 @@ adjustment) so that reported results can be defended to a skeptical reviewer.
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-1109_passing-brightgreen.svg)](#testing)
-[![Version 0.2.5](https://img.shields.io/badge/version-0.2.5-blue.svg)](CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/tests-1169_passing-brightgreen.svg)](.github/workflows/tests.yml)
+[![CI](https://github.com/Hansiongs/hans-backtest/actions/workflows/tests.yml/badge.svg)](.github/workflows/tests.yml)
+[![Lint](https://github.com/Hansiongs/hans-backtest/actions/workflows/lint.yml/badge.svg)](.github/workflows/lint.yml)
+[![Version 0.3.0](https://img.shields.io/badge/version-0.3.0-blue.svg)](CHANGELOG.md)
 
 ## Why quant_lib?
 
@@ -37,13 +39,17 @@ writeup.
 ```python
 from quant_lib import run_explore, run_commit
 
+# NOTE: cache_dir is relative to your current working directory.
+# Pass an absolute path for reproducible results across working dirs.
+CACHE_DIR = "./data_cache"  # or e.g. "/var/quant_cache"
+
 # Phase 0-3: explore (holdout stays sealed)
-result = run_explore("vol_compression_v1")
+result = run_explore("vol_compression_v1", cache_dir=CACHE_DIR)
 print(f"SPA p-value: {result['spa_p_value']}")
 print(f"Final equity: ${result['final_equity']:,.2f}")
 
 # Phase 4: commit (irreversible, breaks seal)
-commit = run_commit("vol_compression_v1")
+commit = run_commit("vol_compression_v1", cache_dir=CACHE_DIR)
 print(f"PSR: {commit.psr}")
 print(f"Final equity: ${commit.final_equity:,.2f}")
 ```
@@ -210,7 +216,7 @@ methodology writeup. Highlights:
 ## Testing
 
 ```bash
-# Run all 1109 tests (~140s)
+# Run all 1169 tests (~140s)
 make test
 
 # Run fast tests only (skips @pytest.mark.slow)
@@ -220,11 +226,11 @@ make test-fast
 make test-cov
 # HTML report at htmlcov/index.html
 
-# Lint (requires `pip install ruff`)
+# Lint + type-check (ruff + mypy)
 make lint
 ```
 
-**Test categories** (1109 total):
+**Test categories** (1169 total):
 - Unit tests (per-function)
 - Integration tests (component interaction)
 - Property-based tests (Hypothesis, ~22 invariants)
@@ -234,6 +240,16 @@ make lint
 - Per-experiment `StrategyConfig` wiring tests
 - Per-fold PF-weighted risk allocation tests (`core/_risk_allocation.py`)
 - Chaos / fault-injection tests
+- Holdout-seal migration tests (`tests/test_migrate_seals.py`)
+
+**Environment variables for testing:**
+
+| Variable | Purpose |
+|---|---|
+| `QUANT_LIB_HMAC_SECRET` | HMAC key for holdout seals (required, min 32 chars). |
+| `QUANT_LIB_SEAL_DIR` | Override the seal directory (default `data_cache/holdout_seals`). |
+| `HQS_KEEP_SEAL_DIR=1` | Prevent cleanup of per-process seal temp dir after test session (useful for debugging). |
+| `OFFLINE=1` | Skip network tests (marked `@pytest.mark.network`). |
 
 ## Project Structure
 
@@ -244,17 +260,46 @@ quant_lib/
 ├── core/               # Private implementation (JIT engine)
 ├── research/           # ResearchSession, Candidate, commit
 ├── experiments/        # (within quant_lib/) User-defined experiment configs
-├── tests/              # 1109 tests
+├── tests/              # 1169 tests
 ├── tools/              # Public composable API
 ├── utils/              # Shared utilities
 ├── docs/
 │   └── methodology.md  # Paper-grade methodology writeup
+├── .github/
+│   └── workflows/      # CI: tests.yml + lint.yml + mutation.yml
 ├── CHANGELOG.md
 ├── CITATION.cff
 ├── LICENSE              # MIT
 ├── Makefile
 ├── pyproject.toml
 └── README.md
+```
+
+## Continuous Integration
+
+Three GitHub Actions workflows under `.github/workflows/`:
+
+- **`tests.yml`** (PR + push, ~3 min): Runs `pytest -n auto --cov=quant_lib --cov-branch`
+  on a matrix of Python 3.10/3.11/3.12/3.13 × Ubuntu/Windows. Network tests
+  are skipped via `OFFLINE=1`. Codecov upload on the canonical (Ubuntu, 3.12)
+  entry; the Windows coverage.xml is uploaded as a downloadable artifact for
+  cross-platform inspection.
+- **`lint.yml`** (PR + push, ~30s quick gate + ~2 min full):
+  - `quick` job: fast `ruff check` for PR-opened feedback
+  - `ruff` job: full `ruff check` + `ruff format --check` on Linux/Mac/Windows
+  - `mypy` job: type-check on Python 3.10/3.11/3.12
+- **`mutation.yml`** (weekly Monday 03:00 UTC + manual trigger): Runs
+  `mutmut run --max-children 4` on the F16-scoped mutation set
+  (`quant_lib/research/candidate.py` + `commit.py` per `pyproject.toml`).
+  Results are uploaded as artifacts; the scheduled run catches mutation-score
+  drift before release.
+
+Run the same checks locally:
+
+```bash
+make lint          # ruff + mypy
+make test-cov      # full test suite with branch coverage
+make mutate        # mutation testing (slow, ~10-30 min)
 ```
 
 ## Documentation
@@ -282,7 +327,7 @@ opaque to coverage tooling.
 
 ```bash
 # Clone the repo
-git clone https://github.com/TODO-ACTUAL-USERNAME/quant_lib.git
+git clone https://github.com/Hansiongs/hans-backtest.git
 cd quant_lib
 
 # Install with dev dependencies
@@ -300,9 +345,9 @@ If you use quant_lib in a paper, please cite it as:
 @software{quant_lib,
   author = {quant_lib contributors},
   title = {quant_lib: Honest backtesting for crypto strategies},
-  version = {0.2.5},
+  version = {0.3.0},
   year = {2026},
-  url = {https://github.com/TODO-ACTUAL-USERNAME/quant_lib}
+  url = {https://github.com/Hansiongs/hans-backtest}
 }
 ```
 
@@ -315,8 +360,12 @@ MIT — see [LICENSE](LICENSE).
 
 ## Contributing
 
-This is currently a personal research project. If you find a bug or
-have a suggestion, please open an issue.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for:
+- Development setup and prerequisites
+- Code style guide (ruff, mypy, naming conventions)
+- Testing guidelines and risk areas
+- How to add new experiments and strategies
+- Release checklist and pull-request process
 
 ## Acknowledgments
 

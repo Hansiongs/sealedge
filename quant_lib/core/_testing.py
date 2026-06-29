@@ -11,6 +11,7 @@ import numpy as np
 from numpy import ndarray
 import scipy.stats as stats
 
+from quant_lib.core._config import STATIC
 from quant_lib.core._logging import log
 
 
@@ -76,7 +77,10 @@ def prob_sharpe_ratio(
                 f"(near-constant returns). Returning SR=NaN, PSR=NaN."
             )
             return float("nan"), float("nan")
-        denom = n - 1
+        # Explicit float annotation: the weighted branch (line ~114)
+        # reassigns denom to a float expression, so we declare it
+        # float here to keep a single type for the symbol.
+        denom: float = n - 1
     else:
         # Weighted path: weighted mean, weighted variance, weighted SR
         # (matches the formula in core/_wfa.py:179-200)
@@ -88,6 +92,21 @@ def prob_sharpe_ratio(
             )
             return float("nan"), float("nan")
         w = w / w_sum  # normalize to sum=1
+
+        # Warn if any weight falls below the configured floor. This
+        # indicates near-degenerate concentration (one trade dominates)
+        # where the Kish ESS is close to 1 and PSR is unreliable.
+        # The check is non-blocking — the ESS < 2.0 guard downstream
+        # handles the hard rejection. We only flag it here for diagnostics.
+        _w_floor = STATIC.get("psr_weight_floor", 0.001)
+        n_below = int((w < _w_floor).sum())
+        if n_below > 0:
+            log.warning(
+                f"PSR weighted: {n_below}/{len(w)} trade weights "
+                f"are below the configured floor ({_w_floor}). "
+                f"Effective sample size (Kish ESS) will be degraded."
+            )
+
         w_mean = float(np.dot(returns, w))
         w_var = float(np.dot(w, (returns - w_mean) ** 2))
         if n < 10 or w_var <= 0:

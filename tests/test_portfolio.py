@@ -1,14 +1,11 @@
 """Tests for portfolio simulation — MTM, margin, circuit breaker."""
 
-import numpy as np
 import pandas as pd
-import pytest
 
 from quant_lib.core._portfolio import (
     _trade_key,
     simulate_full_portfolio,
 )
-from quant_lib.core._config import STATIC
 
 
 class TestTradeKey:

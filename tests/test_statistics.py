@@ -1,7 +1,6 @@
 """Tests for statistical testing utilities — PSR, FDR, p-value labeling."""
 
 import numpy as np
-import pytest
 
 from quant_lib.core._testing import (
     prob_sharpe_ratio,

@@ -7,6 +7,7 @@ ExperimentConfig. Use ``register()`` to add, ``get()`` to retrieve.
 from __future__ import annotations
 
 import logging
+from typing import Callable
 
 from .base import ExperimentConfig
 
@@ -16,7 +17,7 @@ log = logging.getLogger(__name__)
 _REGISTRY: dict[str, "ExperimentConfig"] = {}
 
 
-def register(config_or_fn: "ExperimentConfig | callable") -> "ExperimentConfig":
+def register(config_or_fn: "ExperimentConfig | Callable[[], ExperimentConfig]") -> "ExperimentConfig":
     """Register an experiment config, or use as a decorator.
 
     Usage as a function (after constructing the config):

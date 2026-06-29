@@ -7,7 +7,50 @@ and must contain mechanism, boundary conditions, and success criteria.
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import IntEnum
 from typing import Optional
+
+
+class StrategyType(IntEnum):
+    """Type-safe identifier for the strategy variant a hypothesis uses.
+
+    Using this enum instead of raw integers (0/1) gives:
+
+    * **Readability**: ``StrategyType.PULLBACK_SNIPER`` vs the magic
+      number ``1``.
+    * **Type checking**: mypy catches accidental swaps between
+      the two strategies.
+    * **Self-documentation**: the int values are tied to the
+      engine's contract via the enum members, so a rename surfaces
+      all call sites immediately.
+
+    The int values are part of the engine's public ABI (``fast_trade_loop``
+    takes ``strategy_type: int``) so they MUST stay stable. To add a
+    new strategy, append a new member here AND add a matching
+    ``STRATEGY_*`` constant in ``core/_engine.py`` AND update
+    ``STRATEGY_NAME_TO_INT`` in ``experiments/base.py``.
+
+    Examples
+    --------
+    >>> from quant_lib.audit import Hypothesis, StrategyType
+    >>> h = Hypothesis(name="v1", mechanism="...", boundary_conditions="...",
+    ...                success_criteria="...", strategy_type=StrategyType.PULLBACK_SNIPER)
+    >>> h.strategy_type
+    1
+    >>> h.strategy_name
+    'pullback_sniper'
+    """
+
+    VOL_COMPRESSION = 0
+    PULLBACK_SNIPER = 1
+
+
+# Backwards-compat aliases. Existing code (and engine.py / __init__.py
+# re-exports) uses these module-level int constants. The values are
+# explicitly typed as ``int`` so the engine's Numba-compiled function,
+# which expects a raw int, accepts them as-is without conversion.
+STRATEGY_VOL_COMPRESSION: int = int(StrategyType.VOL_COMPRESSION)
+STRATEGY_PULLBACK_SNIPER: int = int(StrategyType.PULLBACK_SNIPER)
 
 
 @dataclass(frozen=True)
@@ -37,8 +80,14 @@ class Hypothesis:
     git_commit : str, optional
         Git commit hash at hypothesis creation time. Should be populated
         by the caller via ``git rev-parse HEAD``.
-    strategy_type : int, optional
-        0 = vol_compression_breakout (default), 1 = pullback_sniper.
+    strategy_type : int or StrategyType, optional
+        Strategy identifier. Accepts either the ``StrategyType`` enum
+        value (``StrategyType.VOL_COMPRESSION`` /
+        ``StrategyType.PULLBACK_SNIPER``) or the legacy int constant
+        (``STRATEGY_VOL_COMPRESSION = 0`` /
+        ``STRATEGY_PULLBACK_SNIPER = 1``). Stored as an int internally
+        so the value is JSON-serializable and matches the engine's
+        raw-int parameter signature.
     search_space : dict, optional
         Per-hypothesis Optuna search space. If None, uses STATIC defaults.
     static_overrides : dict, optional
@@ -73,6 +122,8 @@ class Hypothesis:
     universe_rules: Optional[str] = None
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     git_commit: Optional[str] = None
+    # Default is the int form (0) for JSON-serializable round-trips;
+    # the StrategyType enum above lets callers pass either form.
     strategy_type: int = 0
     search_space: Optional[dict] = None
     static_overrides: Optional[dict] = None
@@ -116,9 +167,12 @@ class Hypothesis:
     @property
     def strategy_name(self) -> str:
         """Human-readable strategy name."""
-        if self.strategy_type == 0:
+        # Compare against the IntEnum's underlying int value so
+        # ``strategy_type`` can be either a raw int (legacy call
+        # sites) or a ``StrategyType`` member (new call sites).
+        if self.strategy_type == StrategyType.VOL_COMPRESSION:
             return "vol_compression_breakout"
-        elif self.strategy_type == 1:
+        elif self.strategy_type == StrategyType.PULLBACK_SNIPER:
             return "pullback_sniper"
         return f"unknown_{self.strategy_type}"
 
@@ -137,9 +191,9 @@ class Hypothesis:
         return merged
 
 
-# Strategy type constants (match engine)
-STRATEGY_VOL_COMPRESSION = 0
-STRATEGY_PULLBACK_SNIPER = 1
+# Strategy type constants (STRATEGY_VOL_COMPRESSION / STRATEGY_PULLBACK_SNIPER)
+# are defined near the top of this module as IntEnum-backed aliases for
+# backwards compatibility. See ``StrategyType`` above.
 
 # Default search spaces per strategy
 DEFAULT_VOL_COMPRESSION_SEARCH_SPACE = {

@@ -3,8 +3,8 @@
   "env": {
     "ANTHROPIC_BASE_URL": "http://127.0.0.1:20128/v1",
     "ANTHROPIC_AUTH_TOKEN": "sk_9router",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "oc/deepseek-v4-flash-free",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "oc/deepseek-v4-flash-free",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "oc/deepseek-v4-flash-free"
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "ocg/deepseek-v4-flash",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "ocg/deepseek-v4-flash",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "ocg/deepseek-v4-flash"
   }
 }

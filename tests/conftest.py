@@ -24,15 +24,20 @@ ordering must be flagged with a comment explaining why.
 from __future__ import annotations
 
 import glob
-import inspect
 import os
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Optional
 
 import numpy as np
 import pandas as pd
 import pytest
+
+# Type-only imports used in conftest signatures. Kept at module
+# scope (not TYPE_CHECKING) because some conftest factories use
+# these types at runtime via forward-reference strings.
+from quant_lib.core._engine import EngineArgs  # noqa: E402
+from quant_lib.research.candidate import Candidate  # noqa: E402
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -681,35 +686,65 @@ def make_klines_df(n: int = 2000, start: str = "2019-06-01",
 # These names are kept for the current sprint so we can migrate test
 # files incrementally without breaking their imports.  New code should
 # import the canonical names above.
-_make_session_candidate = make_session_candidate
-_make_candidate_ready = make_candidate_ready
-_patch_statics = patch_statics
-_make_arrays = make_engine_arrays
-_common_extra = common_engine_extra
-_make_engine_args = make_engine_args
-_make_klines_df = make_klines_df
+# (Aliases removed 2026-06-29: audit confirmed all 7 names are unused
+# outside conftest. Test files define local helpers with the same
+# underscore-prefixed names; conftest shadowing was misleading.)
 
 
 # ═══════════════════════════════════════════════════════════════════════
 # Per-test isolation of the on-disk holdout seal / journal (F1 / xdist)
 # ═══════════════════════════════════════════════════════════════════════
-# ``ResearchSession`` persists holdout seals and journals to a
-# fixed-on-disk path (``data_cache/holdout_seals/holdout_<start>_<end>.json``)
-# regardless of the caller's ``cache_dir``.  When the same period is
+# ``ResearchSession`` persists holdout seals and journals to
+# ``<seal_dir>/holdout_<start>_<end>.json``.  When the same period is
 # used across many tests (which is the case for HOLDOUT_PERIOD) and
 # multiple workers run concurrently under pytest-xdist, they race on
 # the same file and tests fail with ``SealVerificationFailed`` because
 # the seal was broken by a peer worker.
 #
 # The autouse fixture below:
-# 1. Removes any pre-existing seal / journal for the test's holdout
-#    period before the test starts (so each test starts fresh).
-# 2. Removes them again after the test finishes (so the next test
-#    doesn't see a broken seal left behind by the previous one).
+# 1. Sets ``QUANT_LIB_SEAL_DIR`` env var to a per-process temp directory
+#    for the duration of the test, so concurrent workers write to
+#    separate seal files. ``ResearchSession`` reads this env var via
+#    its default-derivation logic (see session.py:seal_dir fallback).
+# 2. Cleans up the per-process seal directory at session teardown so
+#    no orphaned files accumulate across runs.
 # This keeps the suite deterministic in serial AND in parallel runs.
 
+# Per-process directory for holdout seal / journal files. Computed
+# once per xdist worker (or once per serial run). Each xdist worker
+# has its own PID-based subdir, so cleanup at session end is safe
+# (it only ever touches the current process's seals).
+import shutil as _shutil  # noqa: E402  (kept local to conftest)
+import tempfile as _tempfile  # noqa: E402  (kept local to conftest)
+_PROCESS_SEAL_DIR = os.path.join(
+    _tempfile.gettempdir(),
+    "hqs_seals_" + str(os.getpid()),
+)
+os.makedirs(_PROCESS_SEAL_DIR, exist_ok=True)
 
-_SEAL_DIR = os.path.join("data_cache", "holdout_seals")
+
+@pytest.fixture(scope="session", autouse=True)
+def _cleanup_process_seal_dir():
+    """Remove the per-process seal dir at session end.
+
+    Each pytest worker (serial or xdist) creates its own
+    ``hqs_seals_<pid>`` directory in the OS temp dir. Without
+    cleanup these accumulate to no functional harm, but they
+    clutter ``%TEMP%`` (Windows) or ``/tmp`` (POSIX) and can
+    confuse post-mortem inspection. To preserve the directory
+    for debugging, set ``HQS_KEEP_SEAL_DIR=1`` in the environment
+    before running tests.
+    """
+    yield
+    if os.environ.get("HQS_KEEP_SEAL_DIR") == "1":
+        return
+    if _PROCESS_SEAL_DIR and os.path.isdir(_PROCESS_SEAL_DIR):
+        try:
+            _shutil.rmtree(_PROCESS_SEAL_DIR, ignore_errors=True)
+        except OSError:
+            # Best-effort cleanup. Don't fail the test session over
+            # a leftover temp dir; the OS will reap it eventually.
+            pass
 
 
 def _remove_seal_files(holdout_period) -> None:
@@ -724,59 +759,28 @@ def _remove_seal_files(holdout_period) -> None:
     if holdout_period is None:
         return
     start, end = holdout_period
-    for path in glob.glob(os.path.join(_SEAL_DIR, f"holdout_{start}_{end}.json")):
+    for path in glob.glob(
+        os.path.join(_PROCESS_SEAL_DIR, f"holdout_{start}_{end}.json")
+    ):
         try:
             os.remove(path)
         except OSError:
             pass
 
 
-# Per-process directory for holdout seal / journal files.  This is
-# computed once per xdist worker (or once per serial run) and is
-# patched into ``quant_lib.research.session`` for the duration of
-# every test, so concurrent workers do not race on the same seal
-# JSON.
-import tempfile as _tempfile  # noqa: E402  (kept local to conftest)
-_PROCESS_SEAL_DIR = os.path.join(
-    _tempfile.gettempdir(),
-    "hqs_seals_" + str(os.getpid()),
-)
-os.makedirs(_PROCESS_SEAL_DIR, exist_ok=True)
-
-
 @pytest.fixture(autouse=True)
 def _redirect_holdout_paths_to_process_dir(monkeypatch):
-    """Force ``ResearchSession`` to write seals / journals under
-    ``_PROCESS_SEAL_DIR`` so that pytest-xdist workers do not race
-    on the shared on-disk location.
+    """Force ``ResearchSession`` and ``quant_exp status`` to read/write
+    seals / journals under ``_PROCESS_SEAL_DIR`` so that pytest-xdist
+    workers do not race on the shared on-disk location.
 
     The redirect is applied before each test and reverted after.
     """
-    import quant_lib.research.session as _session_mod
-
-    # The session module hardcodes the on-disk path; the easiest way
-    # to override it is to swap ``os.path.join`` and ``os.makedirs``
-    # inside the module for the duration of the test.  These two
-    # functions are imported at module load time, so the swap is
-    # local to ``quant_lib.research.session`` and does not affect
-    # other modules.
-    _real_makedirs = _session_mod.os.makedirs
-    _real_join = _session_mod.os.path.join
-
-    def _patched_makedirs(name, *args, **kwargs):
-        if isinstance(name, str) and name == "data_cache/holdout_seals":
-            name = _PROCESS_SEAL_DIR
-        return _real_makedirs(name, *args, **kwargs)
-
-    def _patched_join(a, *p):
-        if a == "data_cache/holdout_seals":
-            a = _PROCESS_SEAL_DIR
-        return _real_join(a, *p)
-
-    monkeypatch.setattr(_session_mod.os, "makedirs", _patched_makedirs)
-    monkeypatch.setattr(_session_mod.os.path, "join", _patched_join)
+    monkeypatch.setenv("QUANT_LIB_SEAL_DIR", _PROCESS_SEAL_DIR)
     yield
-    # monkeypatch restores automatically
+    # monkeypatch restores env automatically
+
+
 
 
 @pytest.fixture(autouse=True)

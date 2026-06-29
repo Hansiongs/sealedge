@@ -11,7 +11,6 @@ import pytest
 from quant_lib.core._data import (
     DATA_DIR,
     _data_path,
-    _ensure_data_dir,
     fetch_with_retry,
     ensure_data_exists,
 )
@@ -135,7 +134,7 @@ class TestFetchWithRetry:
         """5xx HTTP errors should retry."""
         from requests.exceptions import HTTPError
         with patch("quant_lib.core._data.requests.get") as mock_get:
-            with patch("quant_lib.core._data.time.sleep") as mock_sleep:
+            with patch("quant_lib.core._data.time.sleep") as _mock_sleep:
                 mock_response = MagicMock()
                 mock_response.status_code = 500
                 err = HTTPError(response=mock_response)

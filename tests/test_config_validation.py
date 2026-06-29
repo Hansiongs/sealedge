@@ -25,7 +25,6 @@ from quant_lib.experiments import (
     ExperimentConfig,
     PeriodConfig,
     StrategyConfig,
-    StrategyType,
     UniverseConfig,
     from_hypothesis,
 )

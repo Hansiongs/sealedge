@@ -98,8 +98,10 @@ class TestPortfolioSimulationDeterminism:
     @pytest.fixture
     def simple_simulation_inputs(self):
         """Minimal inputs for portfolio simulation."""
-        rng = np.random.default_rng(42)
-        n = 100
+        # Deterministic seed + trade count kept as documentation of
+        # the simulated scope (3 trades, simple structure).
+        _rng = np.random.default_rng(42)
+        _n = 100
         # 3 trades, simple structure
         trades = [
             {

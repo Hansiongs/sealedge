@@ -1,7 +1,6 @@
 """Direct unit tests for ``quant_lib.__init__`` (public API surface)."""
 from __future__ import annotations
 
-from unittest.mock import patch
 
 import pytest
 
@@ -95,8 +94,6 @@ class TestRunExplore:
         register(cfg)
 
         # Mock the heavy pipeline to avoid network/disk
-        from quant_lib.research import session as session_mod
-        from quant_lib.research.candidate import Candidate
 
         # Build a mock session+candidate that returns dummy attributes
         class MockCandidate:

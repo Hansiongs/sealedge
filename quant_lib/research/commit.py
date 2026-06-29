@@ -20,14 +20,13 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
-from quant_lib.core._engine import fast_trade_loop, STRATEGY_VOL_COMPRESSION, STRATEGY_PULLBACK_SNIPER
+from quant_lib.core._engine import fast_trade_loop, STRATEGY_PULLBACK_SNIPER
 from quant_lib.core._config import STATIC, DEFAULTS
 from quant_lib.core._metrics import build_daily_matrices
 from quant_lib.core._testing import prob_sharpe_ratio
 from quant_lib.core._portfolio import simulate_full_portfolio
 from quant_lib.research.exceptions import (
     CommitError,
-    CommitBlocked,
     SealVerificationFailed,
     HoldoutAlreadyBroken,
 )
@@ -162,12 +161,19 @@ def commit_to_holdout(
     # Check seal
     if not session.holdout_set.is_sealed():
         raise HoldoutAlreadyBroken(
-            f"Holdout {session.holdout_period} already broken.",
+            f"Holdout {session.holdout_period} already broken. "
+            f"This holdout cannot be re-used. To evaluate a different "
+            f"holdout window, create a new ResearchSession with a new "
+            f"holdout_period (in experiments/base.py: PeriodConfig).",
         )
 
     if not session.holdout_set.verify():
         raise SealVerificationFailed(
-            "Holdout seal verification failed -- data may have been tampered.",
+            "Holdout seal verification failed -- data may have been "
+            "tampered with since the session was created. "
+            "Check that the underlying OHLCV files in the cache "
+            "directory have not been modified, then create a new "
+            "ResearchSession to retry.",
         )
 
     # ── C-2: Verify holdout data hash against seal (no-peek) ──
@@ -247,7 +253,9 @@ def commit_to_holdout(
     # ── Run frozen-params trade loop (no Optuna) ──
     all_holdout_trades: list[dict] = []
     for sym in narrowed_syms:
-        df = holdout_features[sym]
+        df = holdout_features.get(sym)
+        if df is None or len(df) == 0:
+            continue
         sym_params = frozen.get(sym, {})
         critical_cols = [
             "open", "high", "low", "close",
@@ -372,7 +380,10 @@ def commit_to_holdout(
                 )
 
     # ── Portfolio simulation ──
-    holdout_close, holdout_hl = build_daily_matrices(narrowed_syms, holdout_features)
+    # Only use narrowed symbols that actually have features computed.
+    # Symbols with no cached data are silently dropped (line 237).
+    available_syms = [s for s in narrowed_syms if s in holdout_features]
+    holdout_close, holdout_hl = build_daily_matrices(available_syms, holdout_features)
     # Pass the candidate's PF-allocated weights to the portfolio sim.
     # If the candidate has no risk_weights at all (no WFA folds),
     # pass None to let the simulator use its own default -- the
@@ -381,7 +392,7 @@ def commit_to_holdout(
     if full_weights:
         holdout_weights = {
             sym: full_weights[sym]
-            for sym in narrowed_syms
+            for sym in available_syms
             if sym in full_weights
         }
     else:
@@ -423,7 +434,11 @@ def commit_to_holdout(
     )
     if not was_intact:
         raise CommitError(
-            f"Holdout seal was already broken. Commit aborted.",
+            "Holdout seal was already broken at the moment of "
+            "commit_break. This indicates a race condition (another "
+            "commit ran concurrently) or a state inconsistency. "
+            "Investigate data_cache/holdout_seals/ for the file "
+            "and re-create the session to retry.",
         )
 
     # ── Compute all metrics ──

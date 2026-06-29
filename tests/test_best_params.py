@@ -7,7 +7,6 @@ These tests verify that ``pick_best_params_per_symbol`` correctly:
 - Handles tie-breaking, missing keys, and non-numeric values
 - Is generic across strategies (vol_compression, pullback_sniper)
 """
-import pytest
 
 from quant_lib.research.best_params import pick_best_params_per_symbol
 

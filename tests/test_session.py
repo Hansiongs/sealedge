@@ -1,11 +1,9 @@
 """Tests for ResearchSession."""
 
-import os
 import tempfile
 import pytest
-from datetime import datetime
 
-from quant_lib.audit import Hypothesis, for_vol_compression, for_pullback_sniper
+from quant_lib.audit import Hypothesis, for_vol_compression
 from quant_lib.research.session import ResearchSession
 from quant_lib.research.exceptions import InvalidPeriod
 
@@ -265,3 +263,119 @@ class TestResearchSession:
             assert session.n_commits == 1
             assert session._commits[0].candidate_name == "v1"
             assert session._commits[0].success_criteria_text == "equity > 20%"
+
+
+class TestResearchSessionSealDir:
+    """Tests for the new ``seal_dir`` constructor parameter and the
+    ``QUANT_LIB_SEAL_DIR`` environment variable fallback.
+
+    Background: the seal directory used to be hardcoded to
+    ``data_cache/holdout_seals`` regardless of the caller's
+    ``cache_dir``. That broke for users running from a different
+    working directory or with a non-default cache layout. The fix
+    introduces explicit configuration (constructor arg + env var).
+    """
+
+    def test_default_seal_dir_derives_from_cache_dir(self, monkeypatch):
+        """Without explicit config, ``seal_dir`` defaults to
+        ``<cache_dir>/holdout_seals``."""
+        # Clear the env var fallback so this test is deterministic.
+        monkeypatch.delenv("QUANT_LIB_SEAL_DIR", raising=False)
+        with tempfile.TemporaryDirectory() as tmp:
+            session = ResearchSession(
+                training_period=("2020-01-01", "2024-12-31"),
+                holdout_period=("2025-01-01", "2025-06-30"),
+                symbols=["BTCUSDT"],
+                cache_dir=tmp,
+                _skip_holdout_load=True,
+            )
+            # os.path.join is platform-aware; on Windows it uses "\".
+            import os
+            assert session.seal_dir == os.path.join(tmp, "holdout_seals")
+            # And the directory is created on init.
+            assert os.path.isdir(session.seal_dir)
+
+    def test_explicit_seal_dir_overrides_default(self):
+        """Passing ``seal_dir=`` overrides the default derivation."""
+        import os
+        with tempfile.TemporaryDirectory() as tmp:
+            custom = os.path.join(tmp, "my_seals")
+            session = ResearchSession(
+                training_period=("2020-01-01", "2024-12-31"),
+                holdout_period=("2025-01-01", "2025-06-30"),
+                symbols=["BTCUSDT"],
+                cache_dir=tmp,
+                seal_dir=custom,
+                _skip_holdout_load=True,
+            )
+            assert session.seal_dir == custom
+            assert os.path.isdir(custom)
+
+    def test_env_var_overrides_default(self, monkeypatch):
+        """``QUANT_LIB_SEAL_DIR`` env var overrides the default but
+        is itself overridden by an explicit ``seal_dir=`` argument.
+        """
+        import os
+        with tempfile.TemporaryDirectory() as tmp:
+            env_path = os.path.join(tmp, "env_seals")
+            monkeypatch.setenv("QUANT_LIB_SEAL_DIR", env_path)
+            session = ResearchSession(
+                training_period=("2020-01-01", "2024-12-31"),
+                holdout_period=("2025-01-01", "2025-06-30"),
+                symbols=["BTCUSDT"],
+                cache_dir=tmp,
+                _skip_holdout_load=True,
+            )
+            assert session.seal_dir == env_path
+
+    def test_explicit_seal_dir_beats_env_var(self, monkeypatch):
+        """Explicit ``seal_dir=`` argument takes precedence over
+        the env var. This is important for tests that want to
+        isolate even when the env var is set globally.
+        """
+        import os
+        with tempfile.TemporaryDirectory() as tmp:
+            env_path = os.path.join(tmp, "env_seals")
+            explicit = os.path.join(tmp, "explicit_seals")
+            monkeypatch.setenv("QUANT_LIB_SEAL_DIR", env_path)
+            session = ResearchSession(
+                training_period=("2020-01-01", "2024-12-31"),
+                holdout_period=("2025-01-01", "2025-06-30"),
+                symbols=["BTCUSDT"],
+                cache_dir=tmp,
+                seal_dir=explicit,
+                _skip_holdout_load=True,
+            )
+            assert session.seal_dir == explicit
+
+    def test_seal_file_lands_in_seal_dir(self, monkeypatch):
+        """The HMAC seal JSON is persisted to ``seal_dir``, not to
+        a hardcoded path. This is the regression test for the
+        original smell.
+        """
+        import json
+        from quant_lib.audit.holdout import verify_seal_signature
+        import os
+        monkeypatch.delenv("QUANT_LIB_SEAL_DIR", raising=False)
+        with tempfile.TemporaryDirectory() as tmp:
+            custom = os.path.join(tmp, "custom_seals")
+            # The session is constructed for its side effect of writing
+            # the seal file; we only need to verify the file lands in
+            # ``custom``, not the session object itself.
+            _session = ResearchSession(
+                training_period=("2020-01-01", "2024-12-31"),
+                holdout_period=("2025-01-01", "2025-06-30"),
+                symbols=["BTCUSDT"],
+                cache_dir=tmp,
+                seal_dir=custom,
+                _skip_holdout_load=True,
+            )
+            expected_file = os.path.join(
+                custom, "holdout_2025-01-01_2025-06-30.json"
+            )
+            assert os.path.isfile(expected_file)
+            # And the file is properly HMAC-signed.
+            with open(expected_file, "r") as f:
+                state = json.load(f)
+            assert verify_seal_signature(state)
+

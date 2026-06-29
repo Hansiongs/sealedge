@@ -9,7 +9,7 @@ from __future__ import annotations
 import typer
 
 from quant_lib import cli
-from quant_lib.cli.main import app, main
+from quant_lib.cli.main import app
 
 
 # ═══════════════════════════════════════════════════════════════════════

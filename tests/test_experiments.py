@@ -15,12 +15,10 @@ import pytest
 from quant_lib.audit import for_pullback_sniper, for_vol_compression
 from quant_lib.experiments import (
     ExperimentConfig,
-    Hypothesis,
     PeriodConfig,
     STRATEGY_INT_TO_NAME,
     STRATEGY_NAME_TO_INT,
     StrategyConfig,
-    StrategyType,
     UniverseConfig,
     all_experiments,
     built_in,
@@ -173,7 +171,6 @@ class TestPeriodConfigHoldoutMonths:
 
         Edge case: month-end arithmetic via DateOffset.
         """
-        import datetime
         cfg = PeriodConfig(
             train_start="2020-01-01", train_end="2024-12-31",
             holdout_months=6,

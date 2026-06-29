@@ -1,0 +1,97 @@
+name: mutation
+
+on:
+  # Run weekly so mutation-score drift is caught before release.
+  # Override the schedule via the Actions tab (workflow_dispatch) for
+  # ad-hoc runs after significant refactors.
+  schedule:
+    - cron: "0 3 * * 1"  # Mondays 03:00 UTC
+  workflow_dispatch:
+
+# No concurrency control -- scheduled runs should always complete
+# to produce a fresh mutation score. Manual triggers can co-exist
+# with the scheduled run.
+
+jobs:
+  mutation:
+    name: mutmut (Python 3.12, ubuntu)
+    runs-on: ubuntu-latest
+    # No matrix: mutation testing is slow (10-30 min for the
+    # Candidate + CommitResult scope). Running it on multiple
+    # Python versions or OSes would multiply the cost without
+    # catching meaningfully different bugs.
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install package + mutmut
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install mutmut
+
+      - name: Run mutation testing
+        # ``MUTMUT_RUNNING_IN_BATCH=1`` is a flag mutmut checks to
+        # avoid interactive prompts. --max-children=4 limits
+        # parallelism so the CI runner doesn't OOM.
+        # The "tests/" positional arg scopes mutmut to our test
+        # directory; combined with the [tool.mutmut] mutate list
+        # in pyproject.toml, this gives the F16-scope coverage.
+        env:
+          MUTMUT_RUNNING_IN_BATCH: "1"
+        run: |
+          mutmut run --max-children 4
+
+      - name: Show results
+        # ``mutmut results`` prints a table of surviving mutants.
+        # We let this run even if the previous step failed, so we
+        # can see WHICH mutants survived (the actual failure is
+        # captured by the exit code of ``mutmut run``).
+        if: always()
+        run: |
+          mutmut results || true
+
+      - name: Capture mutation score
+        # ``mutmut stats`` prints a summary including score percent.
+        # Save to a file so the artifact captures the trendable metric.
+        if: always()
+        run: |
+          echo "## Mutation Score $(date -u +%Y-%m-%d)" >> mutation_score.txt
+          mutmut stats >> mutation_score.txt 2>&1 || true
+
+      - name: Upload mutation report
+        # Archive the mutmut output so it can be inspected in the
+        # GitHub Actions UI. 14-day retention is enough for
+        # week-over-week comparison.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutmut-report
+          path: |
+            mutants/
+            .mutmut-cache
+            mutation_score.txt
+          retention-days: 14
+          if-no-source-found: ignore
+
+      - name: Comment on PR (if any)
+        # When triggered by a PR (via workflow_dispatch + branch),
+        # post a summary comment. Scheduled runs have no PR, so
+        # this step is a no-op there.
+        if: github.event_name == 'workflow_dispatch' && github.event.pull_request.number
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const output = `### Mutation testing (mutmut)\n\nScheduled run completed. Check the workflow run for full results.`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            });

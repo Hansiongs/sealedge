@@ -381,13 +381,13 @@ def _build_engine_args_for_behavioral(
     """
     rng = np.random.default_rng(seed)
     h = highs if highs is not None else np.full(n, 100.3)
-    l = lows if lows is not None else np.full(n, 99.7)
+    l_arr = lows if lows is not None else np.full(n, 99.7)
     hh_20 = pd.Series(h).rolling(20).max().shift(1).bfill().values
-    ll_20 = pd.Series(l).rolling(20).min().shift(1).bfill().values
+    ll_20 = pd.Series(l_arr).rolling(20).min().shift(1).bfill().values
     return EngineArgs(
         market_data=(
             opens if opens is not None else np.full(n, 100.0),
-            h, l,
+            h, l_arr,
             closes if closes is not None else np.full(n, 100.0),
         ),
         channel_features=(

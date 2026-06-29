@@ -16,6 +16,9 @@ Modules:
 
 # Eager import to ensure submodules are available
 from quant_lib import tools, audit, core, research
+# Re-export CommitResult so that ``run_commit``'s return annotation
+# resolves at type-check time without a string forward reference.
+from quant_lib.research import CommitResult  # noqa: F401
 
 # Version is set in pyproject.toml and accessible via importlib.metadata
 # but we keep a hardcoded fallback for direct access
@@ -85,7 +88,7 @@ def run_explore(
 def run_commit(
     experiment_name: str,
     cache_dir: str = "./data_cache",
-) -> "CommitResult":
+) -> CommitResult:
     """Run Phase 4 (commit) on an experiment.
 
     IRREVERSIBLE. Breaks the holdout seal. This holdout cannot be used
@@ -102,6 +105,7 @@ def run_commit(
     -------
     CommitResult
         Full commit result with equity metrics, trade stats, PSR, etc.
+        See :class:`quant_lib.research.CommitResult` for fields.
     """
     from quant_lib.experiments import get
     from quant_lib.research.commit import commit_to_holdout

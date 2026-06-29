@@ -30,11 +30,8 @@ Fix
 """
 from __future__ import annotations
 
-import logging
 from typing import Optional
 
-import pandas as pd
-import pytest
 
 from quant_lib.core._risk_allocation import (
     apply_pf_weighted_risk_allocation,
@@ -380,11 +377,8 @@ class TestCommitRiskWeightCarryoverIntegration:
         trade was built with risk_weight=0.01 regardless of
         candidate.risk_weights.
         """
-        import sys
-        from unittest.mock import patch, MagicMock
 
         # Import commit module for patching
-        from quant_lib.research import commit as commit_mod
 
         # Build a stub candidate with a non-default risk_weight
         cand = _build_stub_candidate(

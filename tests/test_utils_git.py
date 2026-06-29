@@ -7,12 +7,10 @@ and the ``short`` / ``cwd`` parameters.
 from __future__ import annotations
 
 import subprocess
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from quant_lib.utils import git as git_mod
 from quant_lib.utils.git import get_git_commit
 
 

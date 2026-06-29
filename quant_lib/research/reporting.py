@@ -44,7 +44,6 @@ from scipy import stats as scipy_stats
 
 if TYPE_CHECKING:
     from quant_lib.research.candidate import Candidate
-    from quant_lib.research.commit import CommitResult
 
 
 console = Console()

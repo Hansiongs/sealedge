@@ -13,7 +13,6 @@ machine; the goal is regression detection, not absolute speed.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd

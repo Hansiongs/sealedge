@@ -17,7 +17,6 @@ from typing import Optional
 import pandas as pd
 
 from quant_lib.core._data import ensure_data_exists, ensure_funding_exists
-from quant_lib.research.exceptions import SessionError
 
 
 class DataCache:

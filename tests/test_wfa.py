@@ -7,16 +7,13 @@ Targets:
 - run_wfa_per_symbol (warm-start enqueue, consecutive_failures reset)
 """
 
-import inspect
+from contextlib import contextmanager
 from unittest.mock import MagicMock
 
 import numpy as np
-import optuna
 import pandas as pd
-import pytest
 
-from quant_lib.core._config import DEFAULTS, STATIC
-from quant_lib.core._engine import fast_trade_loop
+from quant_lib.core._config import DEFAULTS
 from quant_lib.core._wfa import (
     WalkForwardObjective,
     _adaptive_trials,
@@ -352,9 +349,6 @@ class TestRunWfaPerSymbol:
 # ─────────────────────────────────────────────────────────────────────
 # S4.1: helper context manager
 # ─────────────────────────────────────────────────────────────────────
-
-
-from contextlib import contextmanager
 
 
 @contextmanager

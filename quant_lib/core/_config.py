@@ -92,6 +92,14 @@ DEFAULTS: dict[str, Any] = {
     "wfa_decay_halflife_months": 15,
     "wfa_test_months": 3,
     "wfa_trials_per_fold": 80,
+    # PSR: minimum trade-weight floor (fraction of 1.0). When the
+    # weights post-normalisation are below this threshold, the
+    # effective sample size (Kish ESS) approaches 1 and the PSR
+    # becomes unreliable. The weighted-PSR code path in
+    # core/_testing.py logs a warning when any weight is below this
+    # floor, and the ESS < 2.0 guard ultimately catches the worst
+    # cases.
+    "psr_weight_floor": 0.001,
     # PF-based risk allocation
     "pf_weight_clamp_floor": 0.5,
     "pf_weight_clamp_ceiling": 1.5,

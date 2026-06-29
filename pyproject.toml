@@ -63,9 +63,9 @@ viz = [
 quant_exp = "quant_lib.cli.main:app"
 
 [project.urls]
-Homepage = "https://github.com/TODO-ACTUAL-USERNAME/quant_lib"
-Repository = "https://github.com/TODO-ACTUAL-USERNAME/quant_lib"
-Issues = "https://github.com/TODO-ACTUAL-USERNAME/quant_lib/issues"
+Homepage = "https://github.com/Hansiongs/hans-backtest"
+Repository = "https://github.com/Hansiongs/hans-backtest"
+Issues = "https://github.com/Hansiongs/hans-backtest/issues"
 
 [tool.setuptools.packages.find]
 namespaces = false

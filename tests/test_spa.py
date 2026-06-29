@@ -7,14 +7,12 @@ Targets:
 - simulate_trailing_stop_trade exit paths (used by SPA)
 """
 
-from datetime import datetime, timedelta
-from unittest.mock import MagicMock
+from datetime import timedelta
 
 import numpy as np
 import pandas as pd
-import pytest
 
-from quant_lib.core._config import STATIC, DEFAULTS
+from quant_lib.core._config import DEFAULTS
 from quant_lib.core._engine import simulate_trailing_stop_trade
 from quant_lib.core._spa import portfolio_spa
 
@@ -36,7 +34,8 @@ def _make_spa_data(
     """
     if symbols is None:
         symbols = ["BTCUSDT", "ETHUSDT"]
-    rng = np.random.default_rng(seed)
+    # Per-symbol RNG seeded by symbol hash (line 45); a global rng
+    # here would be redundant since each symbol gets its own.
     asset_data = {}
     daily_close_matrix = {}
     daily_hl_matrix = {}
@@ -64,8 +63,8 @@ def _make_spa_data(
             "macro_trend": np.ones(n_bars, dtype=np.int32),
         })
 
-        # Daily close matrix: {date: price}
-        daily_idx = pd.date_range(start, periods=n_bars // 24 + 1, freq="D")
+        # Daily close matrix: {date: price} (rebuilt from resample
+        # below; explicit date_range here was unused)
         daily_close = pd.Series(close, index=times).resample("D").last().dropna()
         daily_high = pd.Series(high, index=times).resample("D").max().dropna()
         daily_low = pd.Series(low, index=times).resample("D").min().dropna()
@@ -92,7 +91,6 @@ def _make_spa_trades(
     start_dt = pd.Timestamp(start)
     for i in range(n):
         sym = symbols[i % len(symbols)]
-        offset = sum(ord(c) for c in sym)
         entry = start_dt + timedelta(hours=i * 6)
         exit_ = entry + timedelta(hours=int(rng.integers(2, 20)))
         trades.append({
@@ -326,14 +324,14 @@ class TestPortfolioSpaEndToEnd:
         returns NaN p-value explicitly so callers can detect the issue.
         """
         from quant_lib.core._spa import portfolio_spa
-        from quant_lib.core._portfolio import simulate_full_portfolio
         import numpy as np
 
         asset_data, daily_close, daily_hl = _make_spa_data()
         trades = _make_spa_trades(n=3)
 
-        # Monkey-patch simulate_full_portfolio to return NaN equity
-        original_simulate = simulate_full_portfolio
+        # Monkey-patch simulate_full_portfolio to return NaN equity.
+        # pytest's monkeypatch fixture handles automatic restore; we
+        # don't need to capture the original here.
         def fake_simulate(*args, **kwargs):
             # Return tuple with NaN equity
             return (float("nan"), [], [], {})
@@ -601,7 +599,9 @@ class TestEntrySlipFormulaRegression:
             base_entry_slip = np.clip(0.010 * (atr_pct_entry / 0.5), 0.005, 0.10)
             random_stress = 1.0 + (random_draw * (stress_mult - 1.0))
             pen_en = weekend_penalty if is_weekends[entry_idx] == 1 else 1.0
-            expected_entry_slip = base_entry_slip * random_stress * pen_en
+            # Computed but the test verifies the formula indirectly
+            # via the returned r_net (see comment below).
+            _expected_entry_slip = base_entry_slip * random_stress * pen_en
 
             # Run simulate_trailing_stop_trade
             # The function doesn't return entry_slip directly, but the

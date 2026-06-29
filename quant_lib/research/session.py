@@ -158,6 +158,12 @@ class ResearchSession:
         Cache TTL in days. Default 7.
     min_train_months : int
         Minimum training months enforced. Default 12.
+    seal_dir : str, optional
+        Directory where the HMAC holdout seal file is persisted.
+        Default ``os.path.join(cache_dir, "holdout_seals")``. Override
+        this if you want seals stored outside the cache tree (e.g. on
+        a separate volume for backup isolation, or in a per-experiment
+        subdirectory). The directory is created if it does not exist.
     _holdout_data : dict, optional (INTERNAL/TESTING)
         Pre-loaded holdout OHLCV data as ``{sym: DataFrame}``. When
         provided, the session skips the data-load step and uses this
@@ -198,6 +204,7 @@ class ResearchSession:
         cache_ttl_days: int = 7,
         min_train_months: int = 12,
         initial_capital: float = 1000.0,
+        seal_dir: Optional[str] = None,
         _holdout_data: Optional[dict[str, pd.DataFrame]] = None,
         _btc_extended: Optional[pd.DataFrame] = None,
         _holdout_hash: Optional[str] = None,
@@ -222,6 +229,21 @@ class ResearchSession:
         self.cache_ttl_days = cache_ttl_days
         self.min_train_months = min_train_months
         self.initial_capital = initial_capital
+        # Resolve seal directory in priority order:
+        #   1. ``seal_dir`` argument (explicit override)
+        #   2. ``QUANT_LIB_SEAL_DIR`` env var (for tooling/CLI config)
+        #   3. ``<cache_dir>/holdout_seals`` (convention default)
+        # Using a single source of truth avoids the previous
+        # "data_cache/holdout_seals" hardcoded path which broke for
+        # users running from a different working dir.
+        if seal_dir is not None:
+            self.seal_dir = seal_dir
+        else:
+            env_seal_dir = os.environ.get("QUANT_LIB_SEAL_DIR")
+            if env_seal_dir:
+                self.seal_dir = env_seal_dir
+            else:
+                self.seal_dir = os.path.join(cache_dir, "holdout_seals")
 
         # State
         self.candidates: list["Candidate"] = []
@@ -287,9 +309,9 @@ class ResearchSession:
                 )
 
         # Seal holdout with real hash (file persistence)
-        os.makedirs("data_cache/holdout_seals", exist_ok=True)
+        os.makedirs(self.seal_dir, exist_ok=True)
         seal_path = os.path.join(
-            "data_cache/holdout_seals",
+            self.seal_dir,
             f"holdout_{hold_start}_{hold_end}.json",
         )
         self.holdout_set = HoldoutSet(
@@ -305,7 +327,7 @@ class ResearchSession:
             hypothesis_name=f"session_{hold_start}_{hold_end}",
             initial_alpha=bonferroni_base,
             journal_path=os.path.join(
-                "data_cache/holdout_seals",
+                self.seal_dir,
                 f"journal_session_{hold_start}_{hold_end}.json",
             ),
         )

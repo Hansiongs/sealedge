@@ -29,7 +29,14 @@ STRATEGY_NAME_TO_INT: dict[str, int] = {
     "vol_compression": 0,
     "pullback_sniper": 1,
 }
-STRATEGY_INT_TO_NAME: dict[int, str] = {v: k for k, v in STRATEGY_NAME_TO_INT.items()}
+# The values are typed as StrategyType (not generic str) so that
+# passing the result to ExperimentConfig(strategy_type=...) doesn't
+# require a cast. Explicit Literal in values because mypy doesn't
+# narrow ``STRATEGY_NAME_TO_INT.items()`` to the literal types.
+STRATEGY_INT_TO_NAME: dict[int, StrategyType] = {
+    0: "vol_compression",
+    1: "pullback_sniper",
+}
 
 
 # Pattern for valid experiment names (lowercase, digits, underscores only)

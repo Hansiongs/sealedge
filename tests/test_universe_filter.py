@@ -1,12 +1,10 @@
 """Tests for Candidate.run_universe universe-selection filter (S6.4)."""
 
 import tempfile
-import numpy as np
 import pandas as pd
 import pytest
 
 from quant_lib.audit import for_vol_compression
-from quant_lib.research.candidate import Candidate
 from quant_lib.research.session import ResearchSession
 from tests.conftest import _MockCache  # M-2: shared cache helper
 

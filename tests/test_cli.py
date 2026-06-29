@@ -133,12 +133,12 @@ class TestCLIApp:
 
     def test_explore_missing_name_fails(self):
         """`explore` without name arg should fail."""
-        result = _run_cli("explore", expect_returncode=2)
+        _result = _run_cli("explore", expect_returncode=2)
         # Typer returns 2 for missing required arg
 
     def test_commit_missing_name_fails(self):
         """`commit` without name arg should fail."""
-        result = _run_cli("commit", "-y", expect_returncode=2)
+        _result = _run_cli("commit", "-y", expect_returncode=2)
 
     def test_show_nonexistent_experiment_fails(self):
         """`show <nonexistent>` should exit nonzero."""
@@ -185,7 +185,7 @@ class TestCommitCmdUnit:
 
     def test_commit_missing_name_fails(self):
         """``commit`` without name arg should fail."""
-        result = _run_cli("commit", "-y", expect_returncode=2)
+        _result = _run_cli("commit", "-y", expect_returncode=2)
 
     def test_commit_help_lists_subcommand(self):
         """``commit --help`` should describe the command."""
@@ -399,8 +399,10 @@ class TestCLISmoke:
             timeout=10,
             env=env,
         )
-        # Should print version
-        assert "0.2.2" in (result.stdout + result.stderr)
+        # Should print version. Read expected version from quant_lib
+        # so the assertion stays in sync with __version__ automatically.
+        from quant_lib import __version__
+        assert __version__ in (result.stdout + result.stderr)
 
     def test_python_api_run_explore_signature(self):
         """The Python API `run_explore` should be callable from quant_lib."""

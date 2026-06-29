@@ -12,6 +12,7 @@ Usage:
 
 from quant_lib.audit.hypothesis import (
     Hypothesis,
+    StrategyType,
     STRATEGY_VOL_COMPRESSION,
     STRATEGY_PULLBACK_SNIPER,
     DEFAULT_VOL_COMPRESSION_SEARCH_SPACE,
@@ -26,6 +27,7 @@ __all__ = [
     "Hypothesis",
     "ExperimentLog",
     "HoldoutSet",
+    "StrategyType",
     "STRATEGY_VOL_COMPRESSION",
     "STRATEGY_PULLBACK_SNIPER",
     "DEFAULT_VOL_COMPRESSION_SEARCH_SPACE",

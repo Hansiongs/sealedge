@@ -9,7 +9,7 @@ import numpy as np
 from numpy import ndarray
 import pandas as pd
 
-from quant_lib.core._config import STATIC, GLOBAL_SEED, DEFAULTS
+from quant_lib.core._config import STATIC, DEFAULTS
 from quant_lib.core._logging import log, console
 from quant_lib.core._portfolio import _trade_key, simulate_full_portfolio
 from quant_lib.core._engine import simulate_trailing_stop_trade
@@ -81,7 +81,10 @@ def portfolio_spa(
     else:
         _precomputed_sym_list = []
 
-    _shared_corr_cache = {}
+    # Cross-iteration correlation cache shared with simulate_full_portfolio.
+    # Same convention as in _portfolio.py (dict | None). Annotation
+    # needed because mypy can't infer dict literal in this scope.
+    _shared_corr_cache: dict | None = {}
 
     # 1. Simulate observed trades for baseline equity
     observed_final_equity = simulate_full_portfolio(
@@ -145,8 +148,8 @@ def portfolio_spa(
     # Return NaN p-value explicitly so callers can detect the issue.
     if np.isnan(observed_final_equity):
         log.warning(
-            f"SPA: observed_final_equity is NaN (numerical issue in "
-            f"portfolio simulation). Returning NaN p-value."
+            "SPA: observed_final_equity is NaN (numerical issue in "
+            "portfolio simulation). Returning NaN p-value."
         )
         return observed_final_equity, random_equities, float("nan")
 

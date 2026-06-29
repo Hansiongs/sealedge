@@ -2,10 +2,8 @@
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from quant_lib.core._features import prepare_data_with_max_time
-from quant_lib.core._config import WARMUP_BARS
 
 
 class TestPrepareDataWithMaxTime:
