@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (Phase 1: Quick Wins — Stability, Consistency, Look-ahead)
+
+- **Best-params selection is now stability-gated** (`research/best_params.py`):
+  Replaces pure "best fold by PSR" with a CV-based stability gate. When
+  the best fold's params have mean CV > 30% across folds (UNSTABLE
+  rating per `print_param_stability`), the selection falls back to
+  per-param MEDIAN across folds. This adds a final safety net against
+  lucky outliers in the best fold while preserving the best fold's
+  signal when params are stable. CV threshold is configurable via the
+  new ``cv_threshold`` parameter on ``pick_best_params_per_symbol``
+  (default 0.30). Backward compatible: when CV ≤ threshold, behavior
+  is identical to the prior best-per-fold selection.
+  - 7 new tests in `tests/test_best_params.py::TestStabilityGate`.
+  - 6 existing tests updated to use stable param sets so the gate
+    does not spuriously trigger.
+- **`kurtosis` field in `CommitResult` now uses `fisher=True`** (excess
+  kurtosis, 0 for normal) for consistency with the PSR formula in
+  `core/_testing.py:141`. Previously used `fisher=False` (regular
+  kurtosis, 3 for normal), making the reported value inconsistent
+  with PSR's internal computation. **Breaking for any user reading
+  the `kurtosis` field — values shift by 3** (e.g., reported 4.5
+  regular → 1.5 excess). No callers observed.
+- **`ess` field in `CommitResult` now reports Kish-corrected ESS**
+  (uniform weights → equals n_trades). Previously reported `n-1`
+  (sample variance df), which was inconsistent with the label "ess".
+  No callers observed that depend on the prior convention.
+- **Zero-trade commit now reports `psr=NaN`** instead of 0.5 (which
+  misleadingly implied "neutral coin flip"). `NaN` correctly conveys
+  "no evidence either way."
+- **SPA p-value correction renamed**: The "Davé 2008 SPA correction"
+  comment is corrected to "Phipson-Bell (2010) add-one correction" —
+  the formula `(n_exceed + 1) / (n_iters + 1)` is the standard
+  Phipson-Bell add-one for permutation tests, not Davé 2008. Formula
+  unchanged. The label was incorrect; the implementation is correct.
+- **ATR feature is now `shift(1)`** (`core/_features.py:113`): Today's
+  ATR no longer uses today's high/low/close. ATR at bar t is the
+  rolling mean of True Range up to bar t-1. This is a real (small)
+  look-ahead fix: the engine uses ATR for SL distance at entry bar,
+  so today's SL should not depend on today's realized volatility.
+- **Error message in `commit_to_holdout` uses configured seal dir**:
+  The "race condition" error message now uses `QUANT_LIB_SEAL_DIR` env
+  var (falling back to the convention default) instead of a hardcoded
+  `data_cache/holdout_seals/` path. No behavior change for default
+  setups; correctness for users with custom seal directories.
+- **Docstring drift fix** (`commit.py:9`): "best-last-fold per symbol"
+  → "stability-gated best fold per symbol" to match actual code
+  behavior.
+
+### Notes
+
+- These changes are part of a phased review-driven cleanup. The
+  stabilities-gated best-params selection (Phase 1's headline change)
+  is now the canonical behavior. No existing functionality is
+  removed; only the reporting kurtosis convention, ESS convention,
+  and zero-trade PSR semantics change. All 1107 unit tests pass
+  after these changes.
+
 ### Added (DX & Testing)
 
 - **`quant_exp init` subcommand** (`cli/init_cmd.py`): Scaffolds a new
