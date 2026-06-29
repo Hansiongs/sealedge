@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (Phase 3: MEDIUM-severity integrity fixes — Atomic writes, path validation, size cap)
+
+- **Atomic journal write** (`audit/journal.py`): `_save_to_disk` now
+  writes via `tempfile.mkstemp` + `os.replace` instead of direct
+  `open()`. A crash mid-write leaves the original audit trail intact.
+  Previously could produce half-written JSON that silently lost the
+  decision history — a direct hit to the framework's "no look-ahead"
+  value proposition.
+- **Atomic seal write** (`audit/holdout.py`): same fix for
+  `_save_seal`. Crash mid-write previously could leave a half-written
+  JSON whose missing signature would cause `verify()` to fail, a
+  false-positive tamper detection.
+- **Path validation in data layer** (`core/_data.py`): `symbol` is
+  validated against `^[A-Z0-9]{2,20}USDT$` and `interval` against
+  `{1m, 5m, 15m, 1h, 4h, 1d}` before use in `os.path.join()`.
+  Prevents path traversal through malformed inputs (defense-in-depth;
+  callers are trusted in practice but the validation closes the
+  hole at the boundary).
+- **Response size cap** (`core/_data.py`): `fetch_with_retry` now
+  uses `stream=True` + `iter_content` with a 500 MB hard cap.
+  Prevents unbounded response bodies from OOM'ing the process.
+  The cap is well above any legitimate Binance Vision response.
+- **Atomic init file writes** (`cli/init_cmd.py`): new
+  `_atomic_file_write` helper used by `quant_exp init` for both
+  experiment files and `.env` templates. Crash during scaffold
+  creation no longer leaves truncated files.
+
+### Notes
+
+- No behavior change for correct inputs and normal operation. The
+  fixes are purely defensive: crash resilience and input validation.
+- The `fetch_with_retry` streaming change preserves the existing
+  API (`Response` with `._content`). Callers use `res.content`
+  identically.
+- All 1130 unit tests pass.
+
 ### Changed (Phase 2: HIGH-severity fixes — Statistical integrity, look-ahead, market impact)
 
 - **Deflated PSR (Bailey & López de Prado 2014)** added (`core/_testing.py`):
