@@ -1,115 +1,121 @@
-"""Tests for the new best-params selection (Q1).
+"""Tests for stability-gated best-params selection (R1, Phase 1).
 
 These tests verify that ``pick_best_params_per_symbol`` correctly:
-- Picks the fold with highest ``best_value`` (PSR) per symbol
+- Picks the fold with highest ``best_value`` (PSR) per symbol when
+  the best fold's params are STABLE (CV < 30%)
+- Falls back to MEDIAN across folds when best fold's params are
+  UNSTABLE (CV >= 30%)
 - Falls back to last fold when ``best_value`` is missing
 - Uses strategy-specific safe defaults when no folds
 - Handles tie-breaking, missing keys, and non-numeric values
 - Is generic across strategies (vol_compression, pullback_sniper)
+
+Phase 1 update: tests use STABLE param sets (low CV) so the stability
+gate does NOT trigger. Stability-gate behavior has its own dedicated
+test class ``TestStabilityGate``.
 """
 
 from quant_lib.research.best_params import pick_best_params_per_symbol
 
 
+# Stable helper: params that vary < 30% CV so stability gate skips
+def _stable_fold(best_value, vol=0.20, trail=3.0, sl=1.5, pb=5):
+    """Return a fold dict with STABLE params (CV < 30% across folds)."""
+    return {
+        "best_value": best_value,
+        "vol_pct_thresh": vol,
+        "trail_atr": trail,
+        "sl_mult": sl,
+        "pullback_bars": pb,
+    }
+
+
 # ════════════════════════════════════════════════════════════════════════
-# Best-Value Selection (the core Q1 behavior)
+# Best-Value Selection (the core Q1 behavior, with STABLE params)
 # ════════════════════════════════════════════════════════════════════════
 
 
 class TestPickBestParamsByValue:
     def test_picks_highest_best_value(self):
-        """Symbol with multiple folds: pick the one with highest best_value."""
+        """Symbol with multiple STABLE folds: pick the one with highest best_value."""
         folds = [
-            {"best_value": 0.5, "vol_pct_thresh": 0.10,
-             "trail_atr": 2.0, "sl_mult": 1.0, "pullback_bars": 3},
-            {"best_value": 0.9, "vol_pct_thresh": 0.25,  # WINNER
-             "trail_atr": 3.5, "sl_mult": 1.8, "pullback_bars": 6},
-            {"best_value": 0.7, "vol_pct_thresh": 0.20,
-             "trail_atr": 3.0, "sl_mult": 1.5, "pullback_bars": 5},
+            _stable_fold(0.5, vol=0.18, trail=2.9, sl=1.4, pb=5),
+            _stable_fold(0.9, vol=0.21, trail=3.1, sl=1.6, pb=5),  # WINNER
+            _stable_fold(0.7, vol=0.19, trail=3.0, sl=1.5, pb=5),
         ]
         result = pick_best_params_per_symbol(
             {"BTCUSDT": folds}, strategy_type=0
         )
-        assert result["BTCUSDT"]["vol_pct_thresh"] == 0.25
-        assert result["BTCUSDT"]["trail_atr"] == 3.5
-        assert result["BTCUSDT"]["sl_mult"] == 1.8
-        assert result["BTCUSDT"]["pullback_bars"] == 6
+        assert result["BTCUSDT"]["vol_pct_thresh"] == 0.21
+        assert result["BTCUSDT"]["trail_atr"] == 3.1
+        assert result["BTCUSDT"]["sl_mult"] == 1.6
+        assert result["BTCUSDT"]["pullback_bars"] == 5
 
     def test_first_fold_can_win(self):
-        """Highest best_value in fold 0, not last fold."""
+        """Highest best_value in fold 0, not last fold. STABLE params."""
         folds = [
-            {"best_value": 0.95, "vol_pct_thresh": 0.30,  # FIRST FOLD WINS
-             "trail_atr": 4.0, "sl_mult": 2.0, "pullback_bars": 7},
-            {"best_value": 0.5, "vol_pct_thresh": 0.20,
-             "trail_atr": 3.0, "sl_mult": 1.5, "pullback_bars": 5},
+            _stable_fold(0.95, vol=0.22, trail=3.2, sl=1.6, pb=5),  # FIRST WINS
+            _stable_fold(0.5, vol=0.20, trail=3.0, sl=1.5, pb=5),
         ]
         result = pick_best_params_per_symbol(
             {"BTCUSDT": folds}, strategy_type=0
         )
-        assert result["BTCUSDT"]["vol_pct_thresh"] == 0.30
-        assert result["BTCUSDT"]["trail_atr"] == 4.0
+        assert result["BTCUSDT"]["vol_pct_thresh"] == 0.22
+        assert result["BTCUSDT"]["trail_atr"] == 3.2
 
     def test_middle_fold_can_win(self):
-        """Highest best_value in the middle fold, not first or last."""
+        """Highest best_value in the middle fold, not first or last. STABLE."""
         folds = [
-            {"best_value": 0.5, "vol_pct_thresh": 0.10,
-             "trail_atr": 2.0, "sl_mult": 1.0, "pullback_bars": 3},
-            {"best_value": 0.9, "vol_pct_thresh": 0.25,  # MIDDLE WINS
-             "trail_atr": 3.5, "sl_mult": 1.8, "pullback_bars": 6},
-            {"best_value": 0.7, "vol_pct_thresh": 0.20,
-             "trail_atr": 3.0, "sl_mult": 1.5, "pullback_bars": 5},
+            _stable_fold(0.5, vol=0.19, trail=3.0, sl=1.5, pb=5),
+            _stable_fold(0.9, vol=0.21, trail=3.0, sl=1.5, pb=5),  # MIDDLE WINS
+            _stable_fold(0.7, vol=0.20, trail=3.0, sl=1.5, pb=5),
         ]
         result = pick_best_params_per_symbol(
             {"BTCUSDT": folds}, strategy_type=0
         )
-        assert result["BTCUSDT"]["vol_pct_thresh"] == 0.25
+        assert result["BTCUSDT"]["vol_pct_thresh"] == 0.21
 
     def test_tie_breaking_first_wins(self):
         """When multiple folds have the same best_value, first one wins.
-
-        Python's max() returns the first occurrence on ties.
+        STABLE params so gate doesn't trigger.
         """
         folds = [
-            {"best_value": 0.8, "vol_pct_thresh": 0.10,  # tied
-             "trail_atr": 2.0, "sl_mult": 1.0, "pullback_bars": 3},
-            {"best_value": 0.8, "vol_pct_thresh": 0.30,  # tied
-             "trail_atr": 4.0, "sl_mult": 2.0, "pullback_bars": 7},
+            _stable_fold(0.8, vol=0.20, trail=3.0, sl=1.5, pb=5),  # tied
+            _stable_fold(0.8, vol=0.22, trail=3.0, sl=1.5, pb=5),  # tied
         ]
         result = pick_best_params_per_symbol(
             {"BTCUSDT": folds}, strategy_type=0
         )
-        # First fold (with vol=0.10) wins on tie
-        assert result["BTCUSDT"]["vol_pct_thresh"] == 0.10
+        # First fold (with vol=0.20) wins on tie
+        assert result["BTCUSDT"]["vol_pct_thresh"] == 0.20
 
     def test_differs_from_last_fold_approach(self):
-        """Sanity check: best-by-PSR != last fold when best is in middle."""
+        """Sanity check: best-by-PSR != last fold when best is in middle. STABLE."""
         folds = [
-            {"best_value": 0.5, "vol_pct_thresh": 0.10,
-             "trail_atr": 2.0, "sl_mult": 1.0, "pullback_bars": 3},
-            {"best_value": 0.9, "vol_pct_thresh": 0.25,  # WINNER
-             "trail_atr": 3.5, "sl_mult": 1.8, "pullback_bars": 6},
-            {"best_value": 0.6, "vol_pct_thresh": 0.20,  # last fold
-             "trail_atr": 3.0, "sl_mult": 1.5, "pullback_bars": 5},
+            _stable_fold(0.5, vol=0.19, trail=3.0, sl=1.5, pb=5),
+            _stable_fold(0.9, vol=0.21, trail=3.0, sl=1.5, pb=5),  # WINNER
+            _stable_fold(0.6, vol=0.20, trail=3.0, sl=1.5, pb=5),  # last fold
         ]
         result = pick_best_params_per_symbol(
             {"BTCUSDT": folds}, strategy_type=0
         )
         # Uses middle fold params, not last fold
-        assert result["BTCUSDT"]["vol_pct_thresh"] == 0.25  # middle
+        assert result["BTCUSDT"]["vol_pct_thresh"] == 0.21  # middle
         assert result["BTCUSDT"]["vol_pct_thresh"] != 0.20  # not last
 
     def test_negative_best_value_picked_correctly(self):
-        """PSR can be negative. Lowest negative is worse than highest negative."""
+        """PSR can be negative. Lowest negative is worse than highest negative.
+        STABLE params so stability gate does NOT trigger.
+        """
         folds = [
-            {"best_value": -0.3, "vol_pct_thresh": 0.10,
-             "trail_atr": 2.0, "sl_mult": 1.0, "pullback_bars": 3},
-            {"best_value": -0.1, "vol_pct_thresh": 0.25,  # LEAST BAD
-             "trail_atr": 3.5, "sl_mult": 1.8, "pullback_bars": 6},
+            _stable_fold(-0.3, vol=0.19, trail=3.0, sl=1.5, pb=5),
+            _stable_fold(-0.1, vol=0.21, trail=3.0, sl=1.5, pb=5),  # LEAST BAD
         ]
         result = pick_best_params_per_symbol(
             {"BTCUSDT": folds}, strategy_type=0
         )
-        assert result["BTCUSDT"]["vol_pct_thresh"] == 0.25
+        # Best fold (least bad negative) wins
+        assert result["BTCUSDT"]["vol_pct_thresh"] == 0.21
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -153,35 +159,37 @@ class TestFallbacks:
         assert "rsi_overbought" not in result["BTCUSDT"]
 
     def test_fallback_to_last_when_no_best_value(self):
-        """If no fold has best_value, fall back to last fold."""
+        """If no fold has best_value, fall back to last fold. STABLE params."""
         folds = [
-            {"vol_pct_thresh": 0.10, "trail_atr": 2.0,
-             "sl_mult": 1.0, "pullback_bars": 3},  # no best_value
-            {"vol_pct_thresh": 0.30, "trail_atr": 4.0,  # last, no best_value
-             "sl_mult": 2.5, "pullback_bars": 7},
+            _stable_fold(None, vol=0.19, trail=3.0, sl=1.5, pb=5),  # no best_value
+            _stable_fold(None, vol=0.21, trail=3.0, sl=1.5, pb=5),  # last, no best_value
         ]
+        # Remove the best_value keys for this test (helper adds None which
+        # would skip the max() check)
+        folds[0].pop("best_value", None)
+        folds[1].pop("best_value", None)
         result = pick_best_params_per_symbol(
             {"BTCUSDT": folds}, strategy_type=0
         )
         # Falls back to last fold
-        assert result["BTCUSDT"]["vol_pct_thresh"] == 0.30
-        assert result["BTCUSDT"]["trail_atr"] == 4.0
+        assert result["BTCUSDT"]["vol_pct_thresh"] == 0.21
+        assert result["BTCUSDT"]["trail_atr"] == 3.0
 
     def test_mixed_folds_with_and_without_best_value(self):
-        """Some folds have best_value, some don't. Use the best best_value."""
+        """Some folds have best_value, some don't. Use the best best_value.
+        STABLE params so stability gate does NOT trigger.
+        """
         folds = [
-            {"vol_pct_thresh": 0.10, "trail_atr": 2.0,  # no best_value
-             "sl_mult": 1.0, "pullback_bars": 3},
-            {"best_value": 0.85, "vol_pct_thresh": 0.25,  # has best_value
-             "trail_atr": 3.5, "sl_mult": 1.8, "pullback_bars": 6},
-            {"best_value": 0.5, "vol_pct_thresh": 0.20,  # has best_value
-             "trail_atr": 3.0, "sl_mult": 1.5, "pullback_bars": 5},
+            _stable_fold(None, vol=0.19, trail=3.0, sl=1.5, pb=5),  # no best_value
+            _stable_fold(0.85, vol=0.21, trail=3.0, sl=1.5, pb=5),  # has best_value
+            _stable_fold(0.5, vol=0.20, trail=3.0, sl=1.5, pb=5),  # has best_value
         ]
+        folds[0].pop("best_value", None)
         result = pick_best_params_per_symbol(
             {"BTCUSDT": folds}, strategy_type=0
         )
         # Fold with best_value=0.85 wins
-        assert result["BTCUSDT"]["vol_pct_thresh"] == 0.25
+        assert result["BTCUSDT"]["vol_pct_thresh"] == 0.21
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -191,28 +199,24 @@ class TestFallbacks:
 
 class TestMultiSymbol:
     def test_each_symbol_uses_own_best(self):
-        """Per-symbol best, not global best."""
+        """Per-symbol best, not global best. STABLE params so gate doesn't trigger."""
         btc_folds = [
-            {"best_value": 0.5, "vol_pct_thresh": 0.10,
-             "trail_atr": 2.0, "sl_mult": 1.0, "pullback_bars": 3},
-            {"best_value": 0.6, "vol_pct_thresh": 0.20,
-             "trail_atr": 3.0, "sl_mult": 1.5, "pullback_bars": 5},
+            _stable_fold(0.5, vol=0.20, trail=3.0, sl=1.5, pb=5),
+            _stable_fold(0.6, vol=0.21, trail=3.0, sl=1.5, pb=5),
         ]
         eth_folds = [
-            {"best_value": 0.9, "vol_pct_thresh": 0.30,  # ETH best
-             "trail_atr": 4.0, "sl_mult": 2.0, "pullback_bars": 7},
-            {"best_value": 0.4, "vol_pct_thresh": 0.15,
-             "trail_atr": 2.5, "sl_mult": 1.2, "pullback_bars": 4},
+            _stable_fold(0.9, vol=0.22, trail=3.1, sl=1.6, pb=5),  # ETH best
+            _stable_fold(0.4, vol=0.19, trail=3.0, sl=1.5, pb=5),
         ]
         result = pick_best_params_per_symbol(
             {"BTCUSDT": btc_folds, "ETHUSDT": eth_folds}, strategy_type=0
         )
-        # BTC's best (0.6, 0.20)
-        assert result["BTCUSDT"]["vol_pct_thresh"] == 0.20
+        # BTC's best (0.6, vol=0.21, trail=3.0)
+        assert result["BTCUSDT"]["vol_pct_thresh"] == 0.21
         assert result["BTCUSDT"]["trail_atr"] == 3.0
-        # ETH's best (0.9, 0.30)
-        assert result["ETHUSDT"]["vol_pct_thresh"] == 0.30
-        assert result["ETHUSDT"]["trail_atr"] == 4.0
+        # ETH's best (0.9, vol=0.22, trail=3.1)
+        assert result["ETHUSDT"]["vol_pct_thresh"] == 0.22
+        assert result["ETHUSDT"]["trail_atr"] == 3.1
 
     def test_symbol_not_in_fold_params_uses_defaults(self):
         """Symbol in `symbols` list but not in dict -- wait, the new
@@ -383,3 +387,109 @@ class TestPullbackBarsInt:
         )
         assert isinstance(result["BTCUSDT"]["pullback_bars"], int)
         assert result["BTCUSDT"]["pullback_bars"] == 7
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Stability Gate (Phase 1, Opsi D)
+# ════════════════════════════════════════════════════════════════════════
+
+
+class TestStabilityGate:
+    """Phase 1 (Opsi D): stability-gated best fold selection.
+
+    When the best fold's params have high CV across folds (>= 30%),
+    the function falls back to per-param MEDIAN across folds. This is
+    the "safety net" against lucky outliers in the best fold.
+    """
+
+    def test_stable_best_fold_keeps_best(self):
+        """CV < 30% → best fold wins (no gate trigger)."""
+        folds = [
+            _stable_fold(0.5, vol=0.19, trail=3.0, sl=1.5, pb=5),
+            _stable_fold(0.9, vol=0.21, trail=3.0, sl=1.5, pb=5),  # WINNER
+        ]
+        result = pick_best_params_per_symbol(
+            {"BTCUSDT": folds}, strategy_type=0
+        )
+        # Best fold's params preserved
+        assert result["BTCUSDT"]["vol_pct_thresh"] == 0.21
+
+    def test_unstable_best_fold_falls_back_to_median(self):
+        """CV >= 30% → median across folds (safety net)."""
+        folds = [
+            _stable_fold(0.5, vol=0.10, trail=2.0, sl=1.0, pb=3),  # wildly different
+            _stable_fold(0.9, vol=0.25, trail=3.5, sl=1.8, pb=6),  # WINNER but unstable
+        ]
+        # Params vary widely → high CV → gate triggers
+        result = pick_best_params_per_symbol(
+            {"BTCUSDT": folds}, strategy_type=0
+        )
+        # Median of [0.10, 0.25] = 0.175
+        assert abs(result["BTCUSDT"]["vol_pct_thresh"] - 0.175) < 1e-9
+        # Median of [2.0, 3.5] = 2.75
+        assert abs(result["BTCUSDT"]["trail_atr"] - 2.75) < 1e-9
+
+    def test_cv_threshold_zero_always_triggers_median(self):
+        """cv_threshold=0.0 forces gate to always trigger."""
+        folds = [
+            _stable_fold(0.5, vol=0.20, trail=3.0, sl=1.5, pb=5),
+            _stable_fold(0.9, vol=0.20, trail=3.0, sl=1.5, pb=5),  # identical params
+        ]
+        # Even with identical params, threshold=0 triggers (CV is exactly 0,
+        # not strictly < 0)
+        result = pick_best_params_per_symbol(
+            {"BTCUSDT": folds}, strategy_type=0, cv_threshold=0.0
+        )
+        # Median = 0.20 (same as best fold)
+        assert result["BTCUSDT"]["vol_pct_thresh"] == 0.20
+
+    def test_cv_threshold_high_disables_gate(self):
+        """cv_threshold=1.0 disables gate (any CV < 100% passes)."""
+        folds = [
+            _stable_fold(0.5, vol=0.10, trail=2.0, sl=1.0, pb=3),
+            _stable_fold(0.9, vol=0.25, trail=3.5, sl=1.8, pb=6),  # WINNER
+        ]
+        result = pick_best_params_per_symbol(
+            {"BTCUSDT": folds}, strategy_type=0, cv_threshold=1.0
+        )
+        # Gate skipped, best fold wins
+        assert result["BTCUSDT"]["vol_pct_thresh"] == 0.25
+
+    def test_single_fold_skips_gate(self):
+        """With only 1 fold, no CV to compute → best fold used."""
+        folds = [_stable_fold(0.5, vol=0.20, trail=3.0, sl=1.5, pb=5)]
+        result = pick_best_params_per_symbol(
+            {"BTCUSDT": folds}, strategy_type=0
+        )
+        assert result["BTCUSDT"]["vol_pct_thresh"] == 0.20
+
+    def test_median_uses_correct_param_set(self):
+        """Median computed across the BEST fold's param set, not all keys."""
+        folds = [
+            {"best_value": 0.5, "vol_pct_thresh": 0.10,
+             "trail_atr": 2.0, "sl_mult": 1.0, "pullback_bars": 3,
+             "extra_param_only_in_fold_0": 999},  # unique key
+            {"best_value": 0.9, "vol_pct_thresh": 0.30,
+             "trail_atr": 4.0, "sl_mult": 2.0, "pullback_bars": 7},  # WINNER
+        ]
+        result = pick_best_params_per_symbol(
+            {"BTCUSDT": folds}, strategy_type=0
+        )
+        # CV of [0.10, 0.30] = ~57% → gate triggers → median
+        # Median = 0.20
+        assert abs(result["BTCUSDT"]["vol_pct_thresh"] - 0.20) < 1e-9
+        # The unique key from fold_0 is not in output
+        assert "extra_param_only_in_fold_0" not in result["BTCUSDT"]
+
+    def test_stable_params_pullback_bars_cast_to_int(self):
+        """When falling back to median, pullback_bars is cast to int."""
+        folds = [
+            _stable_fold(0.5, vol=0.10, trail=2.0, sl=1.0, pb=3),
+            _stable_fold(0.9, vol=0.30, trail=4.0, sl=2.0, pb=7),  # WINNER unstable
+        ]
+        result = pick_best_params_per_symbol(
+            {"BTCUSDT": folds}, strategy_type=0
+        )
+        # Median of [3, 7] = 5 (int after round)
+        assert isinstance(result["BTCUSDT"]["pullback_bars"], int)
+        assert result["BTCUSDT"]["pullback_bars"] == 5
