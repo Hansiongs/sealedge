@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (Phase 4: DX & Polish — Trade bootstrap, regime stats, CLI flags)
+
+- **Per-trade bootstrap** (`core/_metrics.py`): new
+  `run_trade_bootstrap` performs circular block bootstrap on trade
+  R-multiples directly, replacing the daily-return approach for
+  trade-based strategies. Daily-return bootstrap overstates
+  confidence when n_trades &lt; 200 because most days have zero
+  trades; trade bootstrap tests the correct null: "trades are
+  independent with replacement." 5 new fields in `CommitResult`:
+  `trade_bootstrap_worst5_cagr`, `trade_bootstrap_worst95_dd`,
+  `trade_bootstrap_worst5_dd`, `trade_bootstrap_worst1_dd`,
+  `trade_bootstrap_block`. NaN when n_trades &lt; 5.
+- **Regime stats wired into commit report** (`research/commit.py`):
+  `compute_regime_stats` was implemented (`core/_metrics.py:98-117`)
+  but never called in the commit path. Now computed and stored in 4
+  new `CommitResult` fields: `regime_bull_pf`, `regime_bull_n`,
+  `regime_bear_pf`, `regime_bear_n`. NaN when n_trades &lt; 3.
+- **CLI flags `--cache-dir` and `--seal-dir`** (`cli/explore.py`,
+  `cli/commit_cmd.py`): both the `quant_exp explore` and
+  `quant_exp commit` commands now accept `--cache-dir` (default
+  `./data_cache`) and `--seal-dir` (default env var fallback,
+  then convention). The Python API already supported these via
+  `ResearchSession(cache_dir=..., seal_dir=...)`. The CLI now
+  matches. The seal_dir is set as `QUANT_LIB_SEAL_DIR` env var
+  before the session is created so it propagates to all layers.
+
+### Notes
+
+- The trade bootstrap (Phase 4.1) is additive — all existing
+  components (daily-return bootstrap in `run_bootstrap`) remain
+  unchanged. The new function targets trade-based strategies where
+  daily-return bootstrap is statistically less appropriate.
+- CLI flags are optional: existing workflows (no flags) use the
+  same defaults as before (`./data_cache`).
+- All 1130 unit tests pass.
+
 ### Changed (Phase 3: MEDIUM-severity integrity fixes — Atomic writes, path validation, size cap)
 
 - **Atomic journal write** (`audit/journal.py`): `_save_to_disk` now
