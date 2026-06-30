@@ -95,6 +95,97 @@ def run_bootstrap(
     }
 
 
+def run_trade_bootstrap(
+    trade_r_vals: np.ndarray,
+    initial_capital: float,
+    n_sim: int = 2000,
+    block_size: int = 5,
+) -> dict[str, float]:
+    """Circular block bootstrap on TRADE R-multiples (Phase 4.1).
+
+    More appropriate for trade-based strategies than the daily-return
+    bootstrap (``run_bootstrap``). Resamples trade R-multiples in
+    blocks to preserve autocorrelation within winning/losing streaks,
+    then computes the equity outcome for each simulated set.
+
+    Why this replaces the daily-return approach:
+    - For strategies with n_trades < 200, daily returns are sparse
+      (most days have no trades). Bootstrapping daily returns
+      overstates confidence because the zero-return days inflate
+      the apparent sample size.
+    - Trade R-multiples are the fundamental unit of strategy edge.
+      Bootstrapping them directly tests the null "trades are
+      independent with replacement" which is the correct null for
+      a strategy selector.
+
+    Parameters
+    ----------
+    trade_r_vals : np.ndarray
+        1D array of trade R-multiples (per-trade returns).
+    initial_capital : float
+        Starting capital (used to convert R-multiples to USD equity
+        for CAGR/Worst5 metrics).
+    n_sim : int
+        Number of bootstrap simulations. Default 2000.
+    block_size : int
+        Block size for circular block bootstrap (preserves short-
+        range serial correlation). Default 5 trades.
+
+    Returns
+    -------
+    dict
+        ``Worst5_CAGR``: 5th percentile annualized CAGR.
+        ``Worst95_DD``: 95th percentile max drawdown.
+        ``Worst5_DD``: 5th percentile max drawdown.
+        ``Worst1_DD``: 1st percentile max drawdown.
+        ``Block``: block size used.
+        All values NaN if len(trade_r_vals) < 5.
+    """
+    n = len(trade_r_vals)
+    if n < 5:
+        return {
+            "Worst5_CAGR": float("nan"),
+            "Worst95_DD": float("nan"),
+            "Worst5_DD": float("nan"),
+            "Worst1_DD": float("nan"),
+            "Block": block_size,
+        }
+
+    r_arr = np.asarray(trade_r_vals, dtype=np.float64)
+    rng = np.random.default_rng(GLOBAL_SEED + 99999)
+    n_blocks = int(np.ceil(n / block_size))
+    n_days = n  # proxy for CAGR: treat 1 trade ≈ 1 day
+    ending_equities = []
+    max_dds = []
+
+    for _ in range(n_sim):
+        starts = rng.integers(0, n, size=n_blocks)
+        samp = np.concatenate(
+            [r_arr[np.arange(s, s + block_size) % n] for s in starts]
+        )[:n]
+        # Convert R-multiples to equity: eq[t] = eq[t-1] * (1 + samp[t])
+        eq = initial_capital * np.cumprod(1 + samp)
+        ending_equities.append(eq[-1])
+        roll_max = np.maximum.accumulate(eq)
+        max_dds.append(((eq - roll_max) / roll_max).min())
+
+    ending_arr = np.array(ending_equities)
+    dd_arr = np.array(max_dds)
+
+    worst5_cagr = (np.percentile(ending_arr, 5) / initial_capital) ** (
+        365.25 / max(n_days, 1)
+    ) - 1
+    worst5_cagr *= 100
+
+    return {
+        "Worst5_CAGR": worst5_cagr,
+        "Worst95_DD": float(np.percentile(dd_arr, 95) * 100),
+        "Worst5_DD": float(np.percentile(dd_arr, 5) * 100),
+        "Worst1_DD": float(np.percentile(dd_arr, 1) * 100),
+        "Block": block_size,
+    }
+
+
 def compute_regime_stats(executed_trades: list[dict]) -> dict[str, tuple[float, int]]:
     """Compute profit factor per macro regime (Bull/Bear based on BTC macro trend)."""
     bull_trades = [t for t in executed_trades if t.get("m_trend") == 1]

@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from typing import Optional
 
+import os
+
 import typer
 from rich.rule import Rule
 
@@ -23,6 +25,12 @@ from quant_lib.utils.logging import setup_logging
 def commit(
     ctx: typer.Context,
     name: str = typer.Argument(..., help="Experiment name"),
+    cache_dir: Optional[str] = typer.Option(
+        None, "--cache-dir", help="Data cache directory (default ./data_cache)",
+    ),
+    seal_dir: Optional[str] = typer.Option(
+        None, "--seal-dir", help="Holdout seal directory (default <cache_dir>/holdout_seals)",
+    ),
     yes: bool = typer.Option(False, "-y", "--yes", help="Skip confirmation prompt."),
     report: Optional[str] = typer.Option(
         None,
@@ -69,11 +77,14 @@ def commit(
     out = OutputManager(exp.name, mode="commit")
 
     # Session: NO _skip_holdout_load. C-2 enforces hash verification.
+    resolved_cache_dir = cache_dir or "./data_cache"
+    if seal_dir:
+        os.environ["QUANT_LIB_SEAL_DIR"] = seal_dir
     session = ResearchSession(
         training_period=(train_s, train_e),
         holdout_period=(hold_s, hold_e),
         symbols=exp.universe.symbols,
-        cache_dir="./data_cache",
+        cache_dir=resolved_cache_dir,
     )
     # NOTE (0.2.2): Pass strategy=exp.strategy so per-experiment StrategyConfig
     # overrides (PF weight, leverage, etc.) apply in CLI path. Previously

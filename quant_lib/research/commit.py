@@ -94,6 +94,12 @@ class CommitResult:
     counter_trend_trades: int = 0
     counter_trend_r_total: float = 0.0
 
+    # Regime stats (Phase 4.2): Bull/Bear profit factor & trade count.
+    regime_bull_pf: float = float("nan")
+    regime_bull_n: int = 0
+    regime_bear_pf: float = float("nan")
+    regime_bear_n: int = 0
+
     # Seal
     seal_hash_before: str = ""
     seal_hash_after: str = ""
@@ -101,6 +107,15 @@ class CommitResult:
 
     # User-provided criteria
     success_criteria_text: str = ""
+
+    # Trade bootstrap (Phase 4.1): circular block bootstrap on trade
+    # R-multiples. More appropriate than daily-return bootstrap for
+    # strategies with sparse trades. NaN when n_trades < 5.
+    trade_bootstrap_worst5_cagr: float = float("nan")
+    trade_bootstrap_worst95_dd: float = float("nan")
+    trade_bootstrap_worst5_dd: float = float("nan")
+    trade_bootstrap_worst1_dd: float = float("nan")
+    trade_bootstrap_block: int = 0
 
     # Multiple-testing adjustment (Phase 2.1: Bailey & López de Prado 2014).
     # The deflated PSR adjusts the single-trial PSR for the family of
@@ -595,6 +610,32 @@ def commit_to_holdout(
         deflated_psr_val = float("nan")
         n_trials_in_deflated = 0
 
+    # ── Phase 4.1: Trade bootstrap (on R-multiples, not daily returns) ──
+    from quant_lib.core._metrics import run_trade_bootstrap
+    if n_trades >= 5:
+        tb = run_trade_bootstrap(r_vals, session.initial_capital)
+        tb_worst5_cagr = tb["Worst5_CAGR"]
+        tb_worst95_dd = tb["Worst95_DD"]
+        tb_worst5_dd = tb["Worst5_DD"]
+        tb_worst1_dd = tb["Worst1_DD"]
+        tb_block = tb["Block"]
+    else:
+        tb_worst5_cagr = float("nan")
+        tb_worst95_dd = float("nan")
+        tb_worst5_dd = float("nan")
+        tb_worst1_dd = float("nan")
+        tb_block = 0
+
+    # ── Phase 4.2: Regime stats (Bull/Bear PF) ──
+    from quant_lib.core._metrics import compute_regime_stats
+    if n_trades >= 3:
+        regime_stats = compute_regime_stats(h_executed)
+        regime_bull_pf, regime_bull_n = regime_stats["Bull"]
+        regime_bear_pf, regime_bear_n = regime_stats["Bear"]
+    else:
+        regime_bull_pf = regime_bear_pf = float("nan")
+        regime_bull_n = regime_bear_n = 0
+
     # By-symbol stats
     by_symbol = {}
     for sym in narrowed_syms:
@@ -666,6 +707,17 @@ def commit_to_holdout(
         ess=ess,
         deflated_psr=deflated_psr_val,
         n_trials_in_deflated=n_trials_in_deflated,
+        # Phase 4.1: trade bootstrap fields
+        trade_bootstrap_worst5_cagr=tb_worst5_cagr,
+        trade_bootstrap_worst95_dd=tb_worst95_dd,
+        trade_bootstrap_worst5_dd=tb_worst5_dd,
+        trade_bootstrap_worst1_dd=tb_worst1_dd,
+        trade_bootstrap_block=tb_block,
+        # Phase 4.2: regime stats
+        regime_bull_pf=regime_bull_pf,
+        regime_bull_n=regime_bull_n,
+        regime_bear_pf=regime_bear_pf,
+        regime_bear_n=regime_bear_n,
         bonferroni_alpha=bonf_alpha,
         fdr_alpha=fdr_alpha,
         by_symbol_stats=by_symbol,
