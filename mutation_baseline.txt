@@ -1,10 +1,10 @@
 Mutation Baseline
 =================
-Date: To be captured — first CI run (mutation.yml, weekly Monday 03:00 UTC)
+Date: To be captured -- first CI run (mutation.yml, weekly Monday 03:00 UTC)
 Scope: quant_lib/research/candidate.py + commit.py (pyproject.toml [tool.mutmut])
 Method: mutmut run --max-children 4
 
-Status (Phase 4 — v0.5.0)
+Status (Phase 4 -- v0.5.0)
 --------------------------
 Baseline NOT yet captured. The CI workflow runs weekly on Ubuntu and
 produces the baseline automatically on first execution. This file
@@ -12,45 +12,55 @@ documents the capture procedure and acceptance threshold.
 
 To capture the baseline
 ------------------------
-**Option A — GitHub Actions (recommended):**
+**Option A -- GitHub Actions (recommended):**
 1. Open https://github.com/Hansiongs/hans-backtest/actions/workflows/mutation.yml
-2. Click "Run workflow" ▾ (dropdown on the right)
+2. Click "Run workflow" (dropdown on the right)
 3. Branch: main
 4. Click "Run workflow"
 5. After completion (~30-60 min), download the `mutmut-report`
    artifact from the workflow run
-6. Extract `mutation_score.txt` — this is the baseline score
-7. Update the "Expected score" section below with the captured value
+6. Extract `mutation_score.txt` -- this is the baseline score
+7. Update the `BASELINE_SCORE_PCT` field below with the captured value
+8. Commit the updated mutation_baseline.txt -- CI will then enforce
+   the 5pp threshold automatically
 
-**Option B — Local (Linux/WSL required; mutmut does not support Windows):**
+**Option B -- Local (Linux/WSL required; mutmut does not support Windows):**
     MUTMUT_RUNNING_IN_BATCH=1 mutmut run --max-children 4
     mutmut stats
 
-Expected score (TBD)
---------------------
-Baseline score: _______ (populate from first CI run artifact)
-Captured on:    _______ (populate from artifact)
+Baseline score (parseable, CI-enforced)
+---------------------------------------
+# Sprint 3 fix 3.7: BASELINE_SCORE_PCT is the canonical field that
+# the GitHub Actions mutation.yml workflow parses. Format: a single
+# decimal number between 0 and 100 (percentage), or "TBD" before the
+# first capture. The workflow's "Enforce 5pp threshold" step greps
+# this line and fails if the current run drops by more than 5pp.
+#
+# Accepted formats (CI parses the LAST numeric match on the line):
+#   BASELINE_SCORE_PCT: 78.5
+#   BASELINE_SCORE_PCT: 78.5%
+#   BASELINE_SCORE_PCT: TBD     <- workflow no-ops (no enforcement)
+BASELINE_SCORE_PCT: TBD
+
+# When populated, also update:
+# BASELINE_CAPTURED_AT: _______
+# BASELINE_CAPTURED_BY: CI workflow (mutation.yml)
 
 Acceptance threshold
 --------------------
-The mutation score should not drop by more than 5 percentage points
-between releases. If it does, the new code is insufficiently tested
-and needs additional coverage before release.
-
-CI enforcement (planned for v0.5.x)
-------------------------------------
-The workflow `.github/workflows/mutation.yml` will be enhanced to:
-1. Parse the baseline score from this file
-2. Compare current run's score against baseline
-3. Fail the workflow if the drop exceeds the 5pp threshold
-
-Until the baseline is captured, this enforcement is a no-op.
+The mutation score must not drop by more than 5 percentage points
+between the BASELINE_SCORE_PCT and any subsequent run. If it does,
+the new code is insufficiently tested and needs additional coverage
+before release. Enforcement: ``mutation.yml`` "Enforce 5pp threshold"
+step (added in Sprint 3 fix 3.7).
 
 Phase 4 changes affecting mutation scope
 ----------------------------------------
 - v0.4.0 (Phase 2): added dataclass field declarations to
-  `research/candidate.py` — may reduce killable mutants slightly.
-- v0.4.1 (Phase 3): added additive guards — minimal mutation impact.
+  `research/candidate.py` -- may reduce killable mutants slightly.
+- v0.4.1 (Phase 3): added additive guards -- minimal mutation impact.
+- v0.5.x (Sprint 1+2): PR-pipeline polish; no semantic changes to
+  candidate.py or commit.py. Mutation score should not drift.
 
 No changes to `commit.py` signature or semantics in Phase 1-3.
 

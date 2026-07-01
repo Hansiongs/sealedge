@@ -8,15 +8,16 @@ Extracted from Hans_Quant_Systems.py:
 import pandas as pd
 import numpy as np
 
-from quant_lib.core._config import STATIC, WARMUP_BARS
+from quant_lib.core._config import (
+    STATIC,
+    WARMUP_BARS,
+    STRATEGY_VOL_COMPRESSION,
+    STRATEGY_PULLBACK_SNIPER,
+)
 from quant_lib.core._logging import log
 
 # Sentinel for gap detection threshold
 _MAX_ALLOWED_GAP_HOURS: int = 2
-
-# Strategy type constants (match engine STRATEGY_*)
-STRATEGY_VOL_COMPRESSION = 0
-STRATEGY_PULLBACK_SNIPER = 1
 
 # Default pullback_sniper config
 _DEFAULT_RSI_PERIOD = 14

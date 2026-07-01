@@ -17,9 +17,15 @@ from numpy import ndarray
 from dataclasses import dataclass
 from typing import Tuple
 
-# Strategy type constants (must match core._features)
-STRATEGY_VOL_COMPRESSION = 0
-STRATEGY_PULLBACK_SNIPER = 1
+# Sprint 2 fix: import the single-source-of-truth strategy type
+# constants from ``core/_config.py`` instead of redeclaring. The
+# constants are also re-exported from ``audit/hypothesis.py`` for
+# the audit layer; importing from ``_config`` (a sibling leaf
+# module) keeps the dependency graph acyclic.
+from quant_lib.core._config import (  # noqa: I001
+    STRATEGY_VOL_COMPRESSION,
+    STRATEGY_PULLBACK_SNIPER,
+)
 
 
 @dataclass(frozen=True)

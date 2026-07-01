@@ -198,11 +198,21 @@ def simulate_full_portfolio(
     daily_equity = {}
     current_day = None
     executed_trades = []
-    reject_reasons = {"cb_cooldown": 0, "position_limit": 0, "margin_insufficient": 0}
+    reject_reasons = {
+        "cb_cooldown": 0,
+        "position_limit": 0,
+        "margin_insufficient": 0,
+        "invalid_sl_pct": 0,
+    }
     # Phase 2.4: track which symbols have triggered the market
     # impact cap, so we only log once per symbol per run (avoids
     # spamming logs for high-frequency strategies).
     _capped_symbols: set[str] = set()
+    # Sprint 1 fix: track which symbols have triggered the invalid_sl_pct
+    # rejection, so we only log once per symbol per run. Indicates an
+    # upstream bug in trade generation (sl_pct <= 0 should never happen
+    # in normal flow).
+    _invalid_sl_pct_logged: set[str] = set()
 
     # Per-asset circuit breaker
     (
@@ -403,10 +413,22 @@ def simulate_full_portfolio(
 
             sl_pct = trade["sl_pct"]
             if sl_pct <= 0:
-                raise ValueError(
-                    f"sl_pct must be > 0, got {sl_pct} (trade symbol={sym}, "
-                    f"entry_time={trade.get('entry_time')})"
-                )
+                # Sprint 1 fix: previously raised ValueError here, which
+                # killed the entire backtest on a single corrupt trade.
+                # Now skip the trade (consistent with cb_cooldown /
+                # position_limit / margin_insufficient handling) and
+                # log a warning so the upstream issue is detectable.
+                # Mathematically sl_pct=0 would cause division-by-zero
+                # in notional computation; negative is also invalid.
+                reject_reasons["invalid_sl_pct"] += 1
+                if sym not in _invalid_sl_pct_logged:
+                    _invalid_sl_pct_logged.add(sym)
+                    log.warning(
+                        f"[invalid_sl_pct] {sym} trade skipped: sl_pct={sl_pct} "
+                        f"(entry_time={trade.get('entry_time')}). "
+                        f"This indicates an upstream bug in trade generation."
+                    )
+                continue
             risk_capital = current_equity * risk_weight
             notional = risk_capital / sl_pct
             initial_margin = notional / leverage

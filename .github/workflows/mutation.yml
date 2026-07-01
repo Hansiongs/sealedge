@@ -60,15 +60,60 @@ jobs:
       - name: Capture mutation score
         # ``mutmut stats`` prints a summary including score percent.
         # Save to a file so the artifact captures the trendable metric.
+        # Sprint 3 fix 3.7: also append the canonical ``CURRENT_SCORE_PCT``
+        # line in the same format as ``BASELINE_SCORE_PCT`` so the
+        # threshold-enforcement step (below) can grep it directly.
         if: always()
         run: |
           echo "## Mutation Score $(date -u +%Y-%m-%d)" >> mutation_score.txt
           mutmut stats >> mutation_score.txt 2>&1 || true
+          # Extract the percentage from ``mutmut stats`` output. mutmut
+          # prints lines like ``<N>% killed`` somewhere in the table;
+          # we grep the LAST numeric percentage as a robust extraction.
+          current_pct=$(grep -oE '[0-9]+\.[0-9]+%?' mutation_score.txt 2>/dev/null \
+            | tail -1 | tr -d '%' || echo "0")
+          echo "CURRENT_SCORE_PCT: ${current_pct}" >> mutation_score.txt
+
+      - name: Enforce 5pp threshold (Sprint 3 fix 3.7)
+        # Sprint 3 fix 3.7: parse BASELINE_SCORE_PCT from
+        # mutation_baseline.txt and CURRENT_SCORE_PCT from the captured
+        # mutation_score.txt. If both are numeric, fail when the drop
+        # exceeds the 5pp acceptance threshold. If baseline is "TBD"
+        # (first run, no capture yet), this step no-ops -- the captured
+        # CURRENT_SCORE_PCT becomes the baseline for the next run.
+        # Step is wrapped in ``|| true`` and runs ``if: always()`` so it
+        # never blocks artifact upload.
+        if: always()
+        run: |
+          set +e
+          baseline=$(grep -E '^BASELINE_SCORE_PCT:' mutation_baseline.txt \
+            | tail -1 | sed 's/^BASELINE_SCORE_PCT:[[:space:]]*//' | tr -d '%' || echo "TBD")
+          current=$(grep -E '^CURRENT_SCORE_PCT:' mutation_score.txt \
+            | tail -1 | sed 's/^CURRENT_SCORE_PCT:[[:space:]]*//' | tr -d '%' || echo "0")
+          echo "Baseline: ${baseline}"
+          echo "Current:  ${current}"
+          if [ "${baseline}" = "TBD" ] || [ -z "${baseline}" ]; then
+            echo "Baseline is TBD -- no threshold enforcement. Capture from this run and update mutation_baseline.txt."
+          elif ! echo "${current}" | grep -qE '^[0-9]+\.?[0-9]*$'; then
+            echo "Current score is not numeric -- skipping enforcement."
+          else
+            # awk: drop = baseline - current; fail if drop > 5.0
+            drop=$(awk -v b="${baseline}" -v c="${current}" 'BEGIN { printf "%.2f", b - c }')
+            echo "Drop: ${drop}pp"
+            within=$(awk -v d="${drop}" 'BEGIN { print (d <= 5.0 + 1e-9) ? 1 : 0 }')
+            if [ "${within}" = "0" ]; then
+              echo "ERROR: mutation score dropped by ${drop}pp (>= 5pp threshold)." >&2
+              echo "Update tests or revert the regression." >&2
+              exit 1
+            fi
+          fi
 
       - name: Upload mutation report
         # Archive the mutmut output so it can be inspected in the
         # GitHub Actions UI. 14-day retention is enough for
-        # week-over-week comparison.
+        # week-over-week comparison. ``mutation_score.txt`` is
+        # always written by the prior step, so no fallback handling
+        # is needed when individual artifacts are missing.
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -78,7 +123,6 @@ jobs:
             .mutmut-cache
             mutation_score.txt
           retention-days: 14
-          if-no-source-found: ignore
 
       # (PR comment step removed: the workflow trigger only includes
       # schedule and workflow_dispatch, not pull_request, so PR context

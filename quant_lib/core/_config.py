@@ -20,17 +20,128 @@ Removed from STATIC (Phase 4):
   ``StrategyConfig.expected_trades_per_year``.
 - ``global_position_limit``: per-experiment choice; pass via
   ``StrategyConfig.global_position_limit``.
+
+Sprint 3 fix 3.1: ``STATIC`` and ``DEFAULTS`` are now ``TypedDict``s
+instead of ``dict[str, Any]``. This gives mypy precise type-checking on
+all 89+ call sites (``STATIC["fee_taker"]`` is now ``float``, not ``Any``)
+without changing runtime behavior -- TypedDict IS a regular ``dict``
+at runtime, so all existing call sites (e.g.,
+``STATIC["wfa_purge_days"]``, ``DEFAULTS["leverage"]``) work unchanged.
+The values are still mutable dicts so tests that mutate them (e.g.,
+``conftest.py`` resetting ``DATA_DIR``) keep working.
 """
 
-from typing import Any
+from typing import TypedDict
 
 GLOBAL_SEED: int = 42
+
+# ════════════════════════════════════════════════════════════════════════
+# Strategy type constants -- SINGLE SOURCE OF TRUTH
+# ════════════════════════════════════════════════════════════════════════
+# Sprint 2 fix: previously triplicated across ``audit/hypothesis.py``,
+# ``core/_features.py``, and ``core/_engine.py``. Now defined here once
+# and imported by all consumers. Per the layering contract
+# (audit -> core is allowed, never the reverse), ``core/_config.py``
+# is the natural home: it's a leaf node (no quant_lib imports of its
+# own) and ``audit/`` can safely import from it.
+#
+# The int values are part of the engine's public ABI: ``fast_trade_loop``
+# in ``core/_engine.py`` takes ``strategy_type: int``. They MUST stay
+# stable. To add a new strategy, append a constant here AND update the
+# ``StrategyType`` IntEnum in ``audit/hypothesis.py`` AND
+# ``STRATEGY_NAME_TO_INT`` in ``experiments/base.py``.
+STRATEGY_VOL_COMPRESSION: int = 0
+STRATEGY_PULLBACK_SNIPER: int = 1
+
+
+# ════════════════════════════════════════════════════════════════════════
+# TypedDict schemas (Sprint 3 fix 3.1)
+# ════════════════════════════════════════════════════════════════════════
+# TypedDicts are dicts at runtime. The annotation only changes what
+# static analyzers (mypy, pyright) see. All existing call sites like
+# ``STATIC["fee_taker"]`` work unchanged -- both at runtime and at
+# type-check time (mypy now knows the value is ``float``).
+
+
+class StaticConfig(TypedDict):
+    """Schema for ``STATIC``. Infrastructure-level constants.
+
+    Adding a new key here is the type-safe equivalent of adding a row
+    to the ``STATIC`` literal below. Both must be kept in sync.
+    """
+
+    # Feature windows
+    atr_len: int
+    # Exchange costs
+    fee_taker: float
+    maintenance_margin_pct: float
+    liquidation_fee_pct: float
+    liquidation_slippage_pct: float
+    # Test infrastructure
+    bootstrap_n_sim: int
+    bootstrap_block_size_min: int
+    bootstrap_block_size_max: int
+    spa_n_iters: int
+    spa_equity_warn_threshold_usd: float
+    # WFA purge (MAXIMUM; adaptive via _get_purge_days)
+    wfa_purge_days: int
+
+
+class DefaultsConfig(TypedDict):
+    """Schema for ``DEFAULTS``. Per-experiment defaults.
+
+    Mirrors ``quant_lib.experiments.base.StrategyConfig`` -- see
+    ``TestStrategyConfigStaysInSync`` in test_sprint3_fixes.py for
+    the sync guard. Adding a new key here requires also adding it to
+    the ``DEFAULTS`` literal below.
+    """
+
+    # Capital
+    initial_capital: float
+    leverage: float
+    global_position_limit: int
+    # Engine parameters
+    bailout_bars: int
+    weekend_liquidity_penalty: float
+    stress_test_multiplier: float
+    fixed_rvol_thresh: float
+    cb_hard_cooldown_hours: int
+    fixed_cb_threshold: float
+    # Regularization
+    reg_lambda: float
+    # Trend alignment
+    trend_aligned_risk_mult: float
+    trend_counter_risk_mult: float
+    # WFA
+    wfa_min_train_months: int
+    wfa_decay_halflife_months: int
+    wfa_test_months: int
+    wfa_trials_per_fold: int
+    # PSR
+    psr_weight_floor: float
+    # PF-based risk allocation
+    pf_weight_clamp_floor: float
+    pf_weight_clamp_ceiling: float
+    pf_decay_halflife_folds: int
+    pf_min_trades_for_weight: int
+    # Optuna search spaces (loosely typed: each strategy picks a subset
+    # of keys and adds its own. See docs/methodology.md for the canonical
+    # key list per strategy.)
+    search_space: dict[str, tuple[float, float]]
+    search_space_pb: dict[str, tuple[float, float]]
+    # Default per-pair risk weight
+    default_risk_per_pair: float
+    # Default expected trades/year
+    default_expected_trades_per_year: int
+    # Market impact cap
+    market_impact_volume_pct: float
+
 
 # ════════════════════════════════════════════════════════════════════════
 # STATIC -- Infrastructure constants (rarely change, framework-level)
 # ════════════════════════════════════════════════════════════════════════
 
-STATIC: dict[str, Any] = {
+STATIC: StaticConfig = {
     # Feature windows
     "atr_len": 20,                          # ATR rolling window (bars)
     # Exchange costs
@@ -74,7 +185,7 @@ if STATIC["wfa_purge_days"] < 30:
 # ``quant_lib/experiments/base.py``. KEEP IN SYNC with StrategyConfig
 # defaults.
 
-DEFAULTS: dict[str, Any] = {
+DEFAULTS: DefaultsConfig = {
     # Capital
     "initial_capital": 1000.0,
     "leverage": 3.0,

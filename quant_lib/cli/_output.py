@@ -161,7 +161,21 @@ def _render_section(heading: str, content: Union[str, dict, list, tuple]) -> str
 
 
 def _safe_mklink(link: Path, target: str) -> None:
-    """Create or update a symlink. Cross-platform safe."""
+    """Create or update a symlink. Cross-platform safe.
+
+    Sprint 2 fix 2.7: previously the OSError fallback wrote a "LATEST"
+    marker file but no code in the framework ever read it -- so the
+    fallback was effectively dead code. The fallback is now actually
+    USED by ``read_latest_run_dir()`` below: a Windows user without
+    admin (where symlinks fail) can still programmatically discover the
+    most recent run directory. Use ``read_latest_run_dir()`` instead
+    of trying to ``Path.readlink()`` directly so the symlink-or-marker
+    fallback works transparently.
+
+    The marker file is named ``LATEST`` (uppercase, no extension) so it
+    stands out in a directory listing and doesn't conflict with
+    user-named files.
+    """
     try:
         if link.is_symlink() or link.exists():
             link.unlink()
@@ -169,11 +183,50 @@ def _safe_mklink(link: Path, target: str) -> None:
         link.symlink_to(target)
     except OSError:
         # Some filesystems (e.g., Windows without admin) don't allow
-        # symlinks. Fall back to a "LATEST" marker file.
+        # symlinks. Fall back to a "LATEST" marker file. The marker is
+        # read by ``read_latest_run_dir()`` below.
         try:
             (link.parent / "LATEST").write_text(target)
         except OSError:
             pass
+
+
+def read_latest_run_dir(results_dir: Path | None = None) -> Path | None:
+    """Resolve the most recent run directory, transparently handling
+    symlink OR LATEST-marker fallback.
+
+    Sprint 2 fix 2.7: previously the LATEST marker written by
+    ``_safe_mklink`` had no reader in the framework. Now this helper
+    transparently handles both cases:
+
+    1. POSIX / Windows-with-admin: ``results/latest`` is a real symlink.
+    2. Windows-without-admin: ``results/LATEST`` is a plain file
+       containing the run directory name.
+
+    Returns
+    -------
+    Path or None
+        Path to the latest run directory if it exists, else ``None``.
+        The directory itself must still exist; if the symlink/marker
+        points to a deleted directory, ``None`` is returned.
+    """
+    results_dir = results_dir if results_dir is not None else _RESULTS_DIR
+    latest_link = results_dir / "latest"
+    if latest_link.is_symlink():
+        # Resolve symlink target relative to its parent.
+        try:
+            target = (latest_link.parent / latest_link.readlink()).resolve()
+            if target.exists():
+                return target
+        except OSError:
+            return None
+    # Fallback: LATEST marker file (Windows-without-admin).
+    marker = results_dir / "LATEST"
+    if marker.is_file():
+        target = results_dir / marker.read_text().strip()
+        if target.exists():
+            return target
+    return None
 
 
 class OutputManager:

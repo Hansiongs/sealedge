@@ -4,7 +4,7 @@ Targets uncovered lines in:
 - explore.py: _try_save_html_report, _make_chart_provider,
               _per_symbol_equity_from_trades, _looks_like_absolute
 - commit_cmd.py: _try_save_html_report, _make_chart_provider,
-                 _build_equity_series_from_result, _looks_like_absolute
+                 _looks_like_absolute
 """
 from __future__ import annotations
 
@@ -22,9 +22,7 @@ from quant_lib.cli.explore import (
 )
 from quant_lib.cli.commit_cmd import (
     _looks_like_absolute as commit_absolute,
-    _build_equity_series_from_result,
 )
-from quant_lib.research.commit import CommitResult
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -121,35 +119,30 @@ class TestPerSymbolEquityFromTrades:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# _build_equity_series_from_result (commit_cmd.py)
+# Sprint 2 fix: _build_equity_series_from_result removed (commit_cmd.py)
 # ═══════════════════════════════════════════════════════════════════════
+#
+# The function synthesized a misleading 2-point fake equity curve.
+# Replaced by chart_provider returning None for equity_curve /
+# drawdown_underwater on the commit path (renders "Chart not available").
+# Anti-reintroduction guard below.
 
-class TestBuildEquitySeriesFromResult:
+class TestBuildEquitySeriesFromResultRemoved:
+    """Anti-reintroduction guard for Sprint 2 fix 2.4.
 
-    def test_builds_two_point_series(self):
-        result = CommitResult(
-            candidate_name="test", commit_idx=1,
-            holdout_period=("2025-01-01", "2025-06-30"),
-            timestamp="2025-01-01T00:00:00",
-            initial_capital=1000.0, final_equity=1100.0,
-            equity_pct=10.0, cagr_pct=21.0, max_dd_pct=5.0,
-            n_raw_trades=10, n_executed_trades=8, n_rejected=2,
-            reject_breakdown={},
-            n_trades=8, win_rate=62.5, avg_r=0.5, median_r=0.3,
-            std_r=1.0, best_r=2.5, worst_r=-1.5,
-            profit_factor=1.8, avg_bars_held=12.0,
-            sharpe_r=0.5, psr=0.85, psr_ess=0.85,
-            skew=0.2, kurtosis=3.5, ess=8.0,
-            bonferroni_alpha=0.075, fdr_alpha=0.15,
-            by_symbol_stats={},
-            seal_hash_before="", seal_hash_after="a" * 64,
-            seal_broken=True, success_criteria_text="",
+    The ``_build_equity_series_from_result`` helper produced a misleading
+    2-point fake equity curve. It was removed; this test asserts it
+    stays removed so future refactors don't resurrect the misleading chart.
+    """
+
+    def test_function_no_longer_exists(self):
+        """The misleading helper must not exist in commit_cmd module."""
+        import quant_lib.cli.commit_cmd as cmd
+        assert not hasattr(cmd, "_build_equity_series_from_result"), (
+            "_build_equity_series_from_result was removed in Sprint 2.4 "
+            "because it produced a misleading 2-point fake equity curve. "
+            "Re-introduction is forbidden -- see commit_cmd.py docstring."
         )
-        series = _build_equity_series_from_result(result)
-        assert len(series) == 2
-        keys = sorted(series.keys())
-        assert series[keys[0]] == 1000.0
-        assert series[keys[1]] == 1100.0
 
 
 # ═══════════════════════════════════════════════════════════════════════

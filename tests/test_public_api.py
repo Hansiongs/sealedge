@@ -125,10 +125,17 @@ class TestRunExplore:
 
         result = run_explore("test_exp_smoke", cache_dir=str(tmp_path))
 
-        assert isinstance(result, dict)
+        # Sprint 3 fix 3.3: result is now an ExploreResult dataclass,
+        # not a plain dict. Backward-compat dict-style access still
+        # works via __getitem__.
+        from quant_lib.research import ExploreResult
+        assert isinstance(result, ExploreResult)
         assert result["experiment"] == "test_exp_smoke"
         assert result["n_oos_trades"] == 5
         assert result["narrowed_symbols"] == ["BTCUSDT"]
+        # Attribute access (new preferred style).
+        assert result.experiment == "test_exp_smoke"
+        assert result.spa_p_value == 0.05
         clear()
 
 

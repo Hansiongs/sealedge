@@ -8,11 +8,13 @@ from __future__ import annotations
 from typing import Optional
 
 import os
+import traceback
 
 import typer
 from rich.rule import Rule
 
 from quant_lib.cli._output import OutputManager
+from quant_lib.cli._utils import looks_like_absolute
 from quant_lib.experiments import get
 from quant_lib.research.candidate import Candidate
 from quant_lib.research.commit import commit_to_holdout
@@ -113,8 +115,14 @@ def commit(
             success_criteria_text=success_criteria,
         )
     except Exception as e:
+        # Sprint 1 fix: persist the full traceback so real bugs
+        # (typos, AttributeError, ImportError) are not silently
+        # swallowed as "failed" status. The traceback is written
+        # alongside the metrics JSON for post-mortem inspection.
+        tb = traceback.format_exc()
         console.print(f"[red]Commit failed:[/red] {e}")
-        out.save_metrics({"status": "failed", "error": str(e)})
+        console.print(f"[red]{tb}[/red]")
+        out.save_metrics({"status": "failed", "error": str(e), "traceback": tb})
         out.save_config(exp)
         out.link_latest()
         raise typer.Exit(code=1)
@@ -241,15 +249,16 @@ def _make_chart_provider(
         )
         return lambda _name: None
 
-    # We don't have a direct holdout daily_equity handle here; the
-    # commit step produces it internally. The session's daily_close_matrix
-    # is available, but it isn't a cumulated PnL. We render a placeholder
-    # equity curve from the result's by_symbol_stats (sum of R).
-    daily_equity = _build_equity_series_from_result(result)
-    # commit path doesn't expose r_vals directly here. The list is
-    # passed to plot_trade_distribution() which is graceful with empty
-    # input. Type annotation is required because mypy can't infer a
-    # list literal in a nested closure with no later assignment.
+    # Sprint 2 fix 2.4 + Sprint 3 fix 3.6: the commit HTML report now
+    # renders the REAL daily equity curve (not the synthetic 2-point
+    # fake that Sprint 2 removed). ``result.daily_equity`` was added
+    # to ``CommitResult`` in Sprint 3 fix 3.6; it carries the
+    # pd.Timestamp -> equity map from ``commit_to_holdout``. ``None``
+    # when no trades executed (all rejected) -- the chart provider
+    # returns None and the report renders an honest "Chart not
+    # available" placeholder. The trade_distribution chart still
+    # works because it accepts an empty list gracefully.
+    daily_equity = result.daily_equity or {}
     r_vals: list[float] = []
 
     def provider(name: str):
@@ -268,29 +277,19 @@ def _make_chart_provider(
     return provider
 
 
-def _build_equity_series_from_result(result) -> dict:
-    """Build a synthetic daily-equity series for charting from the result.
-
-    The commit path doesn't expose the per-day equity dict directly
-    (it lives in the local variables of ``commit_to_holdout``). We
-    synthesize a flat-to-final curve from the result's summary metrics
-    so the chart isn't empty. Sufficient for visual sanity check;
-    not a substitute for the real equity curve.
-
-    Returns a dict ``{Timestamp: equity}`` with 2 points (initial
-    and final) when no per-trade data is available.
-    """
-    import pandas as pd
-
-    initial = float(result.initial_capital)
-    final = float(result.final_equity)
-    start = pd.Timestamp(result.holdout_period[0])
-    end = pd.Timestamp(result.holdout_period[1])
-    return {start: initial, end: final}
+# Sprint 2 fix removed: ``_build_equity_series_from_result``. The helper
+# produced a misleading 2-point fake equity curve. Sprint 3 fix 3.6
+# now plumbs the REAL daily equity through ``CommitResult.daily_equity``,
+# so the chart provider above renders an honest chart (or honest
+# "Chart not available" when no trades executed).
 
 
 def _looks_like_absolute(path_str: str) -> bool:
-    """Cheap absolute-path detection."""
-    import os
+    """Backward-compat alias for ``looks_like_absolute`` in cli/_utils.
 
-    return os.path.isabs(path_str)
+    Sprint 2 fix 2.5: the implementation moved to ``cli/_utils.py`` to
+    deduplicate the identical helper that was previously in both
+    ``explore.py`` and ``commit_cmd.py``. This alias preserves
+    backward compatibility for callers that imported the private name.
+    """
+    return looks_like_absolute(path_str)

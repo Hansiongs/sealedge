@@ -10,6 +10,17 @@ from datetime import datetime, timezone
 from enum import IntEnum
 from typing import Optional
 
+# Sprint 2 fix: import the single-source-of-truth strategy type
+# constants from ``core/_config.py`` instead of redeclaring. The
+# int values match the ``StrategyType`` enum below and are part of
+# the engine's public ABI (``fast_trade_loop`` takes ``strategy_type:
+# int``). ``audit -> core._config`` is a safe direction: ``_config``
+# is a leaf module with no quant_lib imports of its own.
+from quant_lib.core._config import (  # noqa: I001, E402
+    STRATEGY_VOL_COMPRESSION,
+    STRATEGY_PULLBACK_SNIPER,
+)
+
 
 class StrategyType(IntEnum):
     """Type-safe identifier for the strategy variant a hypothesis uses.
@@ -45,12 +56,10 @@ class StrategyType(IntEnum):
     PULLBACK_SNIPER = 1
 
 
-# Backwards-compat aliases. Existing code (and engine.py / __init__.py
-# re-exports) uses these module-level int constants. The values are
-# explicitly typed as ``int`` so the engine's Numba-compiled function,
-# which expects a raw int, accepts them as-is without conversion.
-STRATEGY_VOL_COMPRESSION: int = int(StrategyType.VOL_COMPRESSION)
-STRATEGY_PULLBACK_SNIPER: int = int(StrategyType.PULLBACK_SNIPER)
+# Note: ``STRATEGY_VOL_COMPRESSION`` and ``STRATEGY_PULLBACK_SNIPER``
+# are imported from ``core/_config.py`` at the top of this module.
+# They are NOT redeclared here -- doing so would shadow the import
+# and defeat the Sprint 2 single-source-of-truth fix.
 
 
 @dataclass(frozen=True)

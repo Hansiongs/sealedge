@@ -200,26 +200,34 @@ class WalkForwardObjective:
         # so the coefficient is (γ₄ - 1)/4 = (excess + 2)/4. prob_sharpe_ratio
         # in core/_testing.py uses the same conversion. See CHANGELOG v0.3.1
         # for the prior bug where (excess - 1)/4 was used.
-        # For WFA optimization we use a NEUTRAL fallback (psr=0.5) when
-        # the variance correction is non-positive OR when the effective
-        # sample size is too small (ESS < 2). Both conditions make the
-        # formula unreliable, and the objective function should not bias
-        # the search in those regimes.
+        # Fallback (Sprint 1 fix): when Bailey's variance correction is
+        # non-positive OR ESS < 2 OR n_trades < 10, the formula is
+        # unreliable. Previously psr was set to 0.5 (neutral) which
+        # allowed degenerate strategies to outcompete mediocre normal
+        # ones in Optuna search. Now we fall back to the raw z-score
+        # ``norm.cdf(w_sr)`` -- the asymptotic limit of Bailey's
+        # formula when skew/kurt corrections go to zero. This preserves
+        # the sign of SR (negative -> psr < 0.5) instead of defaulting
+        # to neutral. If w_sr is NaN, the resulting psr is NaN and
+        # Optuna rejects the trial (same behavior as before for the
+        # truly degenerate case).
         if n_trades >= 10:
             skew = float(scipy_stats.skew(pnl_array))
             kurt = float(scipy_stats.kurtosis(pnl_array, fisher=True))
             var_corr = 1.0 - skew * w_sr + ((kurt + 2.0) / 4.0) * w_sr ** 2
             if var_corr <= 0.0 or ess < 2.0:
-                # Bailey formula outside valid range -- neutral fallback
-                # (prob_sharpe_ratio in core/_testing.py uses a different
-                # fallback: clipping variance for a high PSR. Different
-                # use cases: WFA objective vs. user-facing metric.)
-                psr = 0.5
+                # Bailey formula outside valid range -- use raw z-score
+                # as the asymptotic degenerate limit (sign-preserving).
+                psr = float(scipy_stats.norm.cdf(w_sr))
             else:
                 psr_variance = var_corr / (ess - 1.0)
                 psr = float(scipy_stats.norm.cdf(w_sr / np.sqrt(psr_variance)))
         else:
-            psr = 0.5
+            # Sample too small for reliable skew/kurtosis estimation.
+            # Use raw z-score (no skew/kurt correction) as conservative
+            # sign-preserving fallback. If w_sr is NaN, psr is NaN and
+            # Optuna rejects the trial.
+            psr = float(scipy_stats.norm.cdf(w_sr))
 
         trade_weight = float(
             np.clip(np.log(ess + 1) / np.log(self.expected_trades + 1), 0.1, 1.0)

@@ -8,15 +8,18 @@ from __future__ import annotations
 from typing import Optional
 
 import os
+import traceback
 
 import typer
 from rich.rule import Rule
 
 from quant_lib.cli._output import OutputManager
+from quant_lib.cli._utils import looks_like_absolute
 from quant_lib.experiments import get
 from quant_lib.research.candidate import Candidate
 from quant_lib.research.reporting import print_candidate_report
 from quant_lib.research.session import ResearchSession
+from quant_lib.research._pipeline import build_explore_candidate
 from quant_lib.core._logging import console
 from quant_lib.utils.logging import setup_logging
 
@@ -63,24 +66,16 @@ def explore(
     console.print(f"  Symbols: {', '.join(exp.universe.symbols)}")
     console.print()
 
-    # Session with _skip_holdout_load=True: holdout data NOT fetched
+    # Sprint 3 fix 3.4: use the shared pipeline helper so the CLI and
+    # Python API cannot drift apart. ``build_explore_candidate`` is the
+    # single source of truth for session/candidate construction.
     resolved_cache_dir = cache_dir or "./data_cache"
     if seal_dir:
         os.environ["QUANT_LIB_SEAL_DIR"] = seal_dir
-    session = ResearchSession(
-        training_period=(train_s, train_e),
-        holdout_period=(hold_s, hold_e),
-        symbols=exp.universe.symbols,
+    cand: Candidate
+    cand, _ = build_explore_candidate(
+        experiment_name=name,
         cache_dir=resolved_cache_dir,
-        _skip_holdout_load=True,
-    )
-    # NOTE (0.2.2): Pass strategy=exp.strategy so per-experiment StrategyConfig
-    # overrides (PF weight, leverage, etc.) apply in CLI path. Previously
-    # silently used default StrategyConfig() and ignored per-experiment
-    # config.
-    cand: Candidate = session.create_candidate(
-        exp.hypothesis,
-        strategy=exp.strategy,
     )
 
     try:
@@ -106,8 +101,14 @@ def explore(
         cand.run_narrowing()
         console.print(f"  [green]Narrowed:[/] {cand.narrowed_symbols}")
     except Exception as e:
+        # Sprint 1 fix: persist the full traceback so real bugs
+        # (typos, AttributeError, ImportError) are not silently
+        # swallowed as "failed" status. The traceback is written
+        # alongside the metrics JSON for post-mortem inspection.
+        tb = traceback.format_exc()
         console.print(f"[red]Pipeline failed:[/red] {e}")
-        out.save_metrics({"status": "failed", "error": str(e)})
+        console.print(f"[red]{tb}[/red]")
+        out.save_metrics({"status": "failed", "error": str(e), "traceback": tb})
         out.save_config(exp)
         out.link_latest()
         raise typer.Exit(code=1)
@@ -140,7 +141,7 @@ def explore(
             out=out,
             title=f"Explore: {exp.name}",
             cand=cand,
-            session=session,
+            session=cand.session,
             report=report,
             no_plots=no_plots,
         )
@@ -169,10 +170,10 @@ def _try_save_html_report(
 
     chart_provider = _make_chart_provider(
         cand=cand,
-        session=session,
+        session=cand.session,
         no_plots=no_plots,
     )
-    sections = build_explore_report(cand, session, chart_provider)
+    sections = build_explore_report(cand, cand.session, chart_provider)
 
     # Resolve the report target path. By default the report lives at
     # ``out.path / "report.html"``. A ``--report foo.html`` saves as
@@ -283,7 +284,11 @@ def _per_symbol_equity_from_trades(cand: Candidate) -> dict:
 
 
 def _looks_like_absolute(path_str: str) -> bool:
-    """Cheap absolute-path detection: drive letter on Windows, leading /."""
-    import os
+    """Backward-compat alias for ``looks_like_absolute`` in cli/_utils.
 
-    return os.path.isabs(path_str)
+    Sprint 2 fix 2.5: the implementation moved to ``cli/_utils.py`` to
+    deduplicate the identical helper that was previously in both
+    ``explore.py`` and ``commit_cmd.py``. This alias preserves
+    backward compatibility for callers that imported the private name.
+    """
+    return looks_like_absolute(path_str)

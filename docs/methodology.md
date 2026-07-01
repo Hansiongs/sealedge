@@ -252,11 +252,15 @@ and kurtosis using the Bailey & Lopez de Prado (2012) formula:
 ```
 PSR = Φ((SR - SR_benchmark) / σ_SR)
 σ_SR = sqrt(Var_correction / (n_eff - 1))
-Var_correction = 1 - skew·SR + ((kurt_excess - 1)/4) · SR²
+Var_correction = 1 - skew·SR + ((kurt_excess + 2)/4) · SR²
 ```
 
 Where `kurt_excess` is **excess kurtosis** (kurtosis - 3, 0 for
 normal data). This is the convention used in Bailey's PSR paper.
+Note: Bailey's formula uses REGULAR kurtosis (γ₄ = excess + 3),
+so the coefficient is `(γ₄ - 1)/4 = (excess + 2)/4`. The code in
+`core/_wfa.py` and `core/_testing.py` uses this conversion (Sprint 1
+fix to documentation; the code was correct in v0.3.1+).
 
 #### Conventions (as of 0.2.3)
 
@@ -293,13 +297,15 @@ is genuine or random, using time-anchored circular permutation.
 
 - Bootstrap the null distribution by permuting trade entry times
 - Compare observed equity against the null
-- Compute Davé (2008) corrected p-value:
+- Compute Phipson-Bell (2010) corrected p-value (the standard
+  add-one correction for permutation tests; attribution corrected
+  from prior "Davé (2008)" label, see `core/_spa.py:297-303`):
   ```
   p = (n_exceed + 1) / (n_iters + 1)
   ```
 
 References: Hansen (2005), "A Test for Superior Predictive Ability";
-Davé & Seal (2008).
+Phipson & Smyth (2010), "Permutation P-values Should Never Be Zero".
 
 ### FDR (Benjamini-Hochberg)
 

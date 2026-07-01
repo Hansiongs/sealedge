@@ -9,7 +9,7 @@ is propagated through the candidate and used by the WFA engine.
 """
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal, Optional, Callable
+from typing import TYPE_CHECKING, Any, Literal, Optional, Callable
 import pandas as pd
 
 from quant_lib.audit import Hypothesis
@@ -40,6 +40,40 @@ CandidateStage = Literal[
 ]
 
 
+# Sprint 3 fix 3.2: type aliases for Candidate's previously-untyped
+# dict fields. These are TYPE_ALIASES (not new runtime types) -- they
+# only affect what mypy/pyright see at static-analysis time. Runtime
+# behavior is identical (they all resolve to ``dict``). The aliases
+# live here (not in a separate ``_types.py``) because they're
+# Candidate-specific and not used elsewhere in the framework.
+
+# Per-symbol daily close price series. ``date`` keys are pd.Timestamp.
+DailyCloseMatrix = dict[str, dict[pd.Timestamp, float]]
+
+# Per-symbol daily high/low. Each entry is ``{"high": float, "low": float}``.
+DailyHLMatrix = dict[str, dict[pd.Timestamp, dict[str, float]]]
+
+# Per-symbol baseline risk weight (allocated by PF allocator).
+RiskWeights = dict[str, float]
+
+# Reject-reason counter dict. Keys are stable strings from
+# ``simulate_full_portfolio`` (e.g. "cb_cooldown", "position_limit",
+# "margin_insufficient", "invalid_sl_pct").
+RejectReasons = dict[str, int]
+
+# Edge metrics computed in Phase 2. Values are scalars (counts,
+# floats) -- heterogeneous on purpose (one struct for all edge
+# summary stats). Schema documented in Candidate.run_edge_testing.
+EdgeMetrics = dict[str, float | int]
+
+# Per-symbol frozen best-fit params after WFA. ``sym -> {param: value}``.
+FrozenParams = dict[str, dict[str, float | int]]
+
+# Per-fold WFA output. ``fold_key -> [param_dict_for_each_trial]``.
+# (Empty list for skipped folds.)
+FoldParams = dict[str, list[dict[str, float | int]]]
+
+
 @dataclass
 class Candidate:
     """A single hypothesis attempt within a ResearchSession.
@@ -67,16 +101,16 @@ class Candidate:
 
     # Phase 2: Edge Testing
     all_oos_trades: list[dict] = field(default_factory=list)
-    fold_params: dict[str, list[dict]] = field(default_factory=dict)
+    fold_params: FoldParams = field(default_factory=dict)
     executed_trades: list[dict] = field(default_factory=list)
     final_equity: float = 0.0
     daily_equity: dict = field(default_factory=dict)
-    daily_close_matrix: dict = field(default_factory=dict)
-    daily_hl_matrix: dict = field(default_factory=dict)
-    risk_weights: dict = field(default_factory=dict)
-    reject_reasons: dict = field(default_factory=dict)
+    daily_close_matrix: DailyCloseMatrix = field(default_factory=dict)
+    daily_hl_matrix: DailyHLMatrix = field(default_factory=dict)
+    risk_weights: RiskWeights = field(default_factory=dict)
+    reject_reasons: RejectReasons = field(default_factory=dict)
     spa_p_value: float = 1.0
-    edge_metrics: dict = field(default_factory=dict)
+    edge_metrics: EdgeMetrics = field(default_factory=dict)
 
     # Phase 3: Narrowing
     narrowed_symbols: list[str] = field(default_factory=list)
@@ -92,14 +126,18 @@ class Candidate:
     )
 
     # Frozen params (for commit)
-    frozen_params: dict[str, dict] = field(default_factory=dict)
+    frozen_params: FrozenParams = field(default_factory=dict)
 
     # Per-experiment strategy config (PF-based risk allocation knobs)
     # Defaults to StrategyConfig() if not provided.
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
 
-    # Cached report (set after reporting.print_candidate_report)
-    report: Optional[object] = None
+    # Cached report (set after reporting.print_candidate_report).
+    # Sprint 3 fix 3.2: typed as Optional[Any] for static analysis;
+    # the actual value is whatever ``reporting.print_candidate_report``
+    # produces (string sections list or similar). Avoids ``Optional[object]``
+    # which defeated mypy entirely.
+    report: Optional[Any] = None
 
     # ──────────────────────────────────────────────────────────────────
     # State machine methods

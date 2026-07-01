@@ -34,6 +34,7 @@ from quant_lib.research.session import (
 )
 from quant_lib.research.candidate import Candidate, CandidateStage
 from quant_lib.research.commit import commit_to_holdout, CommitResult
+from quant_lib.research.results import ExploreResult
 from quant_lib.research.reporting import print_candidate_report, print_commit_report
 from quant_lib.research.exceptions import (
     ResearchError,
@@ -53,6 +54,7 @@ __all__ = [
     "CandidateStage",
     "commit_to_holdout",
     "CommitResult",
+    "ExploreResult",
     "print_candidate_report",
     "print_commit_report",
     "DataCache",

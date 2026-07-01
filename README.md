@@ -9,10 +9,10 @@ adjustment) so that reported results can be defended to a skeptical reviewer.
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-1169_passing-brightgreen.svg)](.github/workflows/tests.yml)
+[![Tests](https://img.shields.io/badge/tests-1318_passing-brightgreen.svg)](.github/workflows/tests.yml)
 [![CI](https://github.com/Hansiongs/hans-backtest/actions/workflows/tests.yml/badge.svg)](.github/workflows/tests.yml)
 [![Lint](https://github.com/Hansiongs/hans-backtest/actions/workflows/lint.yml/badge.svg)](.github/workflows/lint.yml)
-[![Version 0.3.0](https://img.shields.io/badge/version-0.3.0-blue.svg)](CHANGELOG.md)
+[![Version 0.5.1](https://img.shields.io/badge/version-0.5.1-blue.svg)](CHANGELOG.md)
 
 ## Why quant_lib?
 
@@ -345,7 +345,7 @@ If you use quant_lib in a paper, please cite it as:
 @software{quant_lib,
   author = {quant_lib contributors},
   title = {quant_lib: Honest backtesting for crypto strategies},
-  version = {0.3.0},
+  version = {0.5.1},
   year = {2026},
   url = {https://github.com/Hansiongs/hans-backtest}
 }

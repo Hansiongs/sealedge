@@ -7,6 +7,315 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (Sprint 3 — type safety + drift prevention)
+
+This release addresses 7 items from the post-Phase-4 systematic review
+focused on type safety, code drift prevention, and infrastructure
+hardening. Backward compatibility is preserved on every item.
+
+- **STATIC/DEFAULTS are now TypedDicts** (`quant_lib/core/_config.py`):
+  the two config dicts were typed as ``dict[str, Any]``, defeating
+  static analysis on all 89+ call sites (``STATIC["fee_taker"]`` was
+  ``Any``, not ``float``). Defined ``StaticConfig`` and
+  ``DefaultsConfig`` TypedDict schemas and applied them. TypedDict is
+  a plain ``dict`` at runtime, so all existing call sites work
+  unchanged; only the annotations change. Anti-reintroduction guards
+  in ``TestStaticDefaultsTypedDict`` assert schema ↔ literal stay
+  in sync.
+
+- **StrategyConfig/DEFAULTS sync guard** (new
+  ``TestStrategyConfigStaysInSync``): the two schemas are intentionally
+  redundant (StrategyConfig is the user-facing API, DEFAULTS is the
+  internal fast-path) and were drifting silently. The new test class
+  enforces: every scalar DEFAULTS key has a matching StrategyConfig
+  field, every shared key has identical default values, and the
+  framework-only exceptions (search_space, default_risk_per_pair,
+  etc.) are documented.
+
+- **Mutation baseline + 5pp CI enforcement** (`mutation_baseline.txt`,
+  `.github/workflows/mutation.yml`): the mutation workflow previously
+  was advisory-only -- no score capture, no enforcement. Added a
+  parseable ``BASELINE_SCORE_PCT: TBD`` field to
+  `mutation_baseline.txt`. The CI workflow now:
+  1. Extracts the current score to ``CURRENT_SCORE_PCT: X.Y`` in
+     ``mutation_score.txt``
+  2. Parses the baseline score (no-op when ``TBD``)
+  3. Fails the run if the drop exceeds the 5pp acceptance threshold
+  First weekly run will populate ``BASELINE_SCORE_PCT`` from the
+  captured score; subsequent runs enforce automatically.
+
+- **Candidate typed fields** (`quant_lib/research/candidate.py`):
+  added type aliases for the previously-untyped ``daily_close_matrix``,
+  ``daily_hl_matrix``, ``risk_weights``, ``reject_reasons``,
+  ``edge_metrics``, ``frozen_params``, ``fold_params`` fields. Runtime
+  is still ``dict``; only static analysis improves. ``report`` field
+  changed from ``Optional[object]`` to ``Optional[Any]`` (more precise
+  than ``object``, doesn't pretend to know the type).
+
+- **ExploreResult dataclass** (`quant_lib/research/results.py`): the
+  return value of ``run_explore`` was a plain ``dict`` while
+  ``run_commit`` returned a typed ``CommitResult`` dataclass --
+  asymmetric public API. Added ``ExploreResult`` dataclass that
+  supports BOTH attribute access (``r.spa_p_value``) for new code
+  AND dict-style access (``r["spa_p_value"]``, ``r.keys()``,
+  ``r.values()``, ``r.items()``, ``r.get(key, default)``, ``len(r)``,
+  ``key in r``, iteration) for backward compatibility with existing
+  code that treated the dict-returning API as a dict. Available as
+  ``quant_lib.ExploreResult`` (lazy via PEP 562) and
+  ``quant_lib.research.ExploreResult``.
+
+- **Shared pipeline helper for CLI/Python API**
+  (`quant_lib/research/_pipeline.py`): ``run_explore`` (Python API)
+  and ``quant_exp explore`` (CLI) had near-identical session/candidate
+  construction logic with subtle differences (CLI used ``session=``
+  attribute directly; Python API used local var). Drift was a real
+  risk (e.g., one of them could forget the ``strategy=exp.strategy``
+  argument). Extracted to ``build_explore_candidate(experiment_name,
+  cache_dir)`` -- single source of truth. Both entry points now call
+  it.
+
+- **Real daily_equity plumbed through CommitResult**
+  (`quant_lib/research/commit.py`, `quant_lib/cli/commit_cmd.py`):
+  the Sprint 2 fix removed the synthetic 2-point fake equity curve
+  and made the commit HTML chart show "Chart not available". Sprint
+  3 completes the fix: added ``CommitResult.daily_equity:
+  Optional[dict]`` carrying the REAL daily equity from
+  ``commit_to_holdout`` (defaults to ``None`` for BC). The commit
+  chart provider now renders the honest chart (or honest
+  "Chart not available" when no trades executed).
+
+### Tests added (Sprint 3)
+
+- **`tests/test_sprint3_fixes.py`** (new file, 34 tests across 7
+  classes): one test class per Sprint 3 fix.
+  - `TestStaticDefaultsTypedDict`: 8 tests (schema ↔ literal sync,
+    dict access preserved, mutation preserved)
+  - `TestStrategyConfigStaysInSync`: 5 tests (key matching, value
+    matching, framework-only exceptions, dict-shape guard)
+  - `TestMutationBaselineInfra`: 4 tests (file exists, doc present,
+    workflow exists, mutmut scope)
+  - `TestCandidateTypedFields`: 3 tests (aliases exported, candidate
+    annotations, runtime dicts work)
+  - `TestExploreResultDataclass`: 6 tests (lazy resolution, attribute
+    access, dict-style BC, keys/values/items, to_dict)
+  - `TestSharedPipelineHelper`: 3 tests (importable, KeyError on
+    unknown, returns Candidate + ExperimentConfig)
+  - `TestCommitResultDailyEquity`: 5 tests (field present, default
+    is None, BC instantiation without arg, accepts real dict,
+    CLI chart provider uses real equity)
+- **`tests/test_public_api.py`**: updated ``TestRunExplore`` to
+  reflect new ``ExploreResult`` return type. Dict-style BC access
+  asserted alongside new attribute access.
+
+### Test counts
+
+- v0.5.1 baseline: 1245 tests passing
+- v0.5.2 (Sprint 1): 1259 tests passing (+14 net new tests)
+- v0.5.3 (Sprint 2): 1283 tests passing (+24 net new tests)
+- v0.5.4 (Sprint 3): **1317 tests passing** (+34 net new tests,
+  +0 regressions)
+
+### Changed (Sprint 2 — review-driven polish)
+
+This release addresses 7 small-to-medium items identified in the
+post-Phase-4 systematic review. All changes are backward-compatible
+(no behavior change for valid inputs).
+
+- **STRATEGY_* constants deduplicated** (`quant_lib/core/_config.py`,
+  `quant_lib/audit/hypothesis.py`, `quant_lib/core/_engine.py`,
+  `quant_lib/core/_features.py`): previously triplicated in three
+  modules (audit, _features, _engine). Moved to single source in
+  `core/_config.py` and imported by all consumers. The IntEnum in
+  `audit/hypothesis.py` remains (it's the public type-safe surface)
+  but its int values derive from the canonical constants. Anti-
+  reintroduction guards via identity checks in
+  `tests/test_sprint2_fixes.py::TestStrategyConstantsSingleSource`.
+
+- **README version badge + citation updated** (`README.md`): badge
+  was stale at 0.3.0 while pyproject.toml was 0.5.1. Updated both
+  the badge and the BibTeX citation block to 0.5.1. Anti-reintro
+  guard in `TestReadmeVersionBadge` (asserts README matches
+  pyproject.toml version automatically).
+
+- **API reference pages now render members** (`docs/api/{audit,core,
+  research,tools}.md`): previously had `members: false` which made
+  the mkdocs site render essentially nothing for these pages.
+  Changed to `members: summary` so signatures and docstrings are
+  visible. `quant_lib.md` already had explicit member list; left
+  unchanged. Anti-reintro guard in `TestAPIReferencePages`.
+
+- **HTML equity curve lie removed** (`quant_lib/cli/commit_cmd.py`,
+  `tests/test_cli_helpers.py`): the commit HTML report previously
+  rendered a SYNTHETIC equity curve built from only 2 points
+  (initial + final). The code itself admitted "not a substitute
+  for the real equity curve" -- misleading for a results chart.
+  Removed `_build_equity_series_from_result`; the commit chart
+  provider now returns None for equity_curve / drawdown_underwater
+  (renders an honest "Chart not available" placeholder). The
+  explore path is unchanged -- it has access to real daily_equity
+  via the Candidate. Anti-reintro guard in
+  `TestBuildEquitySeriesFromResultRemoved`.
+
+- **`_looks_like_absolute` deduplicated** (new
+  `quant_lib/cli/_utils.py`): identical 4-line helper existed in
+  both `explore.py` and `commit_cmd.py`. Moved to `cli/_utils.py`
+  as `looks_like_absolute`. Both files keep private aliases for
+  backward compat with existing tests. Anti-reintro guards in
+  `TestLooksLikeAbsoluteDeduplicated`.
+
+- **Notebook 02 API consistency** (`notebooks/02_custom_experiment.
+  {py,ipynb}`): the notebook example code had wrong field names
+  (`training` instead of `train_start`/`train_end`, `min_volume_usd`
+  instead of `min_volume_usdt`) and non-existent Hypothesis fields
+  (`expectation`, `holding_period`, `exit_rules`, `invalidation`).
+  Rewrote to use the canonical `for_vol_compression` factory +
+  correct field names. Verified the example is executable end-to-end
+  in `TestNotebook02APIConsistency::test_example_is_executable`.
+
+- **`_safe_mklink` LATEST fallback now has a reader** (`quant_lib/cli/
+  _output.py`): previously the OSError fallback wrote a `LATEST`
+  marker file but no code in the framework ever read it -- the
+  fallback was effectively dead code on Windows-without-admin.
+  Added `read_latest_run_dir(results_dir=None)` helper that
+  transparently resolves the latest run via symlink OR marker.
+  Tests cover symlink, marker, missing-target, and default-dir paths
+  in `TestReadLatestRunDir`.
+
+- **Cleaned up stray test artifacts** in `quant_lib/cli/`: removed
+  `data_cache/`, `results/`, and `hqs_execution.log` that earlier
+  test invocations had accidentally created inside the package
+  directory (should be at repo root, not inside a package).
+
+### Tests added (Sprint 2)
+
+- **`tests/test_sprint2_fixes.py`** (new file, 21 tests across 7
+  classes): one test class per Sprint 2 fix. Anti-reintroduction
+  guards use identity checks (constants), source-level greps (no
+  redeclaration), and executable notebook assertions.
+  - `TestStrategyConstantsSingleSource`: 5 tests
+  - `TestReadmeVersionBadge`: 2 tests
+  - `TestAPIReferencePages`: 4 parametrized tests
+  - `TestBuildEquitySeriesFromResultRemoved`: 1 test
+  - `TestLooksLikeAbsoluteDeduplicated`: 4 tests
+  - `TestNotebook02APIConsistency`: 5 tests (incl. 1 end-to-end exec)
+  - `TestReadLatestRunDir`: 5 tests
+- **`tests/test_cli_helpers.py`**: replaced the
+  `TestBuildEquitySeriesFromResult` test with an anti-reintro guard
+  `TestBuildEquitySeriesFromResultRemoved` to prevent the misleading
+  helper from being resurrected.
+
+### Changed (Sprint 1 — v0.5.2: systematic review fixes)
+
+This release addresses 6 issues identified in the post-Phase-4 systematic
+review, prioritized by impact on production-grade claims. Backward
+compatibility: the sl_pct behavior change is technically a soft BC
+break (raised → skipped); users relying on the prior raise can use
+the new `reject_reasons["invalid_sl_pct"]` counter instead.
+
+- **PSR fallback is now sign-preserving**
+  (`quant_lib/core/_wfa.py:208-223`): the degenerate-regime fallback
+  (var_corr ≤ 0 or ESS < 2 or n_trades < 10) previously returned
+  `psr = 0.5` (neutral). This allowed degenerate strategies to
+  outcompete mediocre normal ones in Optuna search. Replaced with
+  `psr = norm.cdf(w_sr)` — the asymptotic limit of Bailey's formula
+  when skew/kurt corrections vanish. Sign is preserved (negative SR
+  → psr < 0.5). For NaN w_sr (truly degenerate), Optuna rejects the
+  trial — same behavior as before.
+
+- **`commit_break` re-verifies on-disk seal** (`quant_lib/audit/holdout.py`):
+  added `self.verify()` call at the top of `commit_break` so an
+  in-memory stale `_tampered` flag cannot allow the seal to be broken
+  after on-disk tampering (e.g., another process modified the seal
+  file between session creation and commit). The verify→save order
+  is enforced with a spy test (TestCommitBreakReVerify).
+
+- **Methodology PSR coefficient corrected** (`docs/methodology.md:255`):
+  the documented formula `(kurt_excess - 1)/4` was incorrect; the
+  code uses `(excess + 2)/4 = (γ₄ - 1)/4` (correct Bailey convention).
+  Doc now matches code. Anti-reintroduction guard in
+  `tests/test_sprint1_fixes.py::TestMethodologyDocPSR`.
+
+- **Methodology SPA attribution corrected** (`docs/methodology.md:296-302`):
+  previously attributed the SPA add-one formula to "Davé (2008)";
+  the correct attribution is Phipson & Smyth (2010) — already used
+  in `_spa.py:297-303` (CHANGELOG v0.5.1 mentioned the code-side
+  fix; doc was inconsistent). Doc now matches code.
+
+- **Portfolio sim skips bad `sl_pct` instead of raising**
+  (`quant_lib/core/_portfolio.py:404-418`): the original B0.2 guard
+  raised `ValueError` on `sl_pct ≤ 0`, killing the entire backtest
+  on a single corrupt trade. Changed to skip + log + increment
+  `reject_reasons["invalid_sl_pct"]`. The "no silent
+  ZeroDivisionError" property is preserved (the skip happens BEFORE
+  the division). B0.2 regression test updated to reflect the new
+  contract (asserts `reject_reasons["invalid_sl_pct"] == 1`,
+  `executed_trades == []`, no exception). New "mixed valid+invalid"
+  regression test confirms one bad trade no longer kills the
+  backtest. See `tests/test_regression_b0_2_sl_pct.py` and
+  `tests/test_sprint1_fixes.py::TestInvalidSlPctRejectReasons`.
+
+  **Migration:** callers that relied on the raise to detect bad
+  trades should now check `reject_reasons["invalid_sl_pct"] > 0`.
+  This is a behavior change from v0.5.1; flagged in the v0.5.2
+  release notes.
+
+- **CLI persists full traceback on exception** (`quant_lib/cli/explore.py`,
+  `quant_lib/cli/commit_cmd.py`): the prior `out.save_metrics(...)`
+  saved only `{"status": "failed", "error": str(e)}`, swallowing
+  the stack trace. Real bugs (typos, `AttributeError`, `ImportError`)
+  were invisible. Now `traceback.format_exc()` is included as
+  `metrics["traceback"]` for post-mortem analysis.
+
+- **`quant_lib` import is now fast and lazy** (`quant_lib/__init__.py`):
+  eager `from quant_lib import tools, audit, core, research` forced
+  Numba JIT compile + pandas/numpy at every `import quant_lib`.
+  Replaced with PEP 562 `__getattr__` lazy import: `import quant_lib`
+  now takes ~0.004s instead of ~1.4s. Submodules still accessible
+  as attributes (`quant_lib.core`, `quant_lib.research`, etc.) and
+  `quant_lib.CommitResult` resolves via `__getattr__` for the
+  `run_commit` return annotation.
+
+### Tests added (v0.5.2)
+
+- **`tests/test_sprint1_fixes.py`** (new file, 12 tests):
+  - `TestPSRFallbackSignPreserving`: anti-reintroduction guard
+    verifies the WFA fallback uses `norm.cdf`, not constant `0.5`.
+  - `TestCommitBreakReVerify`: spy test confirms `verify()` is
+    called before `_save_seal()`; behavior test confirms tampered
+    disk seals abort `commit_break`.
+  - `TestInvalidSlPctRejectReasons`: structural test for the new
+    `reject_reasons["invalid_sl_pct"]` key.
+  - `TestCLITracebackPersistence`: end-to-end CLI tests for
+    `explore` and `commit` confirming `metrics.json` contains the
+    full traceback.
+  - `TestLazyImport`: cold-import subprocess test asserts
+    `import quant_lib` takes < 1.5s; getattr-based access tests
+    confirm submodule backward compat.
+  - `TestMethodologyDocPSR`: source-level guards for the doc
+    coefficient and SPA attribution fixes.
+- **`tests/test_regression_b0_2_sl_pct.py`**: updated to reflect
+  the new skip-not-raise contract. Added `test_mixed_valid_and_invalid_trades`
+  confirming one bad trade no longer kills the backtest. Total
+  tests in file: 7 (up from 3).
+
+### Test counts
+
+- v0.5.1 baseline: 1245 tests passing
+- v0.5.2 (Sprint 1): 1259 tests passing (+14 net new tests,
+  +1 updated regression test, +0 regressions)
+- v0.5.3 (Sprint 2): **1283 tests passing** (+24 net new tests,
+  +0 regressions)
+
+### Skipped (deferred to future)
+
+- Bug #29: standardize docstrings to NumPy style across all modules
+  (broad refactor, low priority).
+- Phase 3 high-risk refactors: `Trade` TypedDict, allocators dedup,
+  EngineArgs call-site refactor, entry-slip helper, MTM dedup.
+  See CHANGELOG v0.4.1 for the deferred list.
+
+## [0.5.1] - 2026-07-01
+
 ### Changed (Polish: v0.5.1 — review-driven minor fixes)
 
 This release addresses 4 issues + 2 test coverage gaps identified in

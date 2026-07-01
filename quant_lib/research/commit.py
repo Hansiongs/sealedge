@@ -16,7 +16,7 @@ Per the framework:
 
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 import os
 
@@ -87,6 +87,15 @@ class CommitResult:
 
     # By-symbol breakdown
     by_symbol_stats: dict = field(default_factory=dict)
+
+    # Sprint 3 fix 3.6: real daily equity curve from the holdout
+    # portfolio simulation. Maps ``pd.Timestamp -> float``. ``None``
+    # when no trades executed or when ``h_daily_eq`` was empty (e.g.,
+    # all trades rejected). Replaces the synthetic 2-point fake that
+    # the commit HTML report used to render (see commit_cmd.py
+    # ``_make_chart_provider`` -- previously returned None for the
+    # commit path, now uses this real series).
+    daily_equity: Optional[dict] = None
 
     # Trend alignment impact
     with_trend_trades: int = 0
@@ -721,6 +730,8 @@ def commit_to_holdout(
         bonferroni_alpha=bonf_alpha,
         fdr_alpha=fdr_alpha,
         by_symbol_stats=by_symbol,
+        # Sprint 3 fix 3.6: real daily equity from holdout sim.
+        daily_equity=h_daily_eq if h_daily_eq else None,
         with_trend_trades=with_trend_count,
         with_trend_r_total=with_trend_r_total,
         counter_trend_trades=counter_trend_count,

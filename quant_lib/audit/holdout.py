@@ -417,8 +417,23 @@ class HoldoutSet:
             was_intact: True if the seal was intact before breaking.
             hash_before: The hash recorded at sealing time (may be placeholder).
             hash_after: The real_data_hash passed in.
+
+        Sprint 1 fix: re-verify the on-disk seal before breaking.
+        Without this call, an in-memory ``_tampered`` flag could be
+        stale if disk tampering occurred between the last ``verify()``
+        call and this ``commit_break()`` (e.g., another process
+        modified the seal file after session creation). The re-verify
+        guarantees the integrity contract is enforced at the moment
+        the seal is irreversibly broken.
         """
         if self._tampered:
+            return False, self._seal.data_hash or "", real_data_hash
+
+        # Re-verify disk state (may set self._tampered and update
+        # self._seal.broken_at from disk if previously broken by a
+        # parallel process). In-memory-only seals (seal_file=None)
+        # pass through verify() unchanged.
+        if not self.verify():
             return False, self._seal.data_hash or "", real_data_hash
 
         was_intact = self._seal.broken_at is None
