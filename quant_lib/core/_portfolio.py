@@ -95,7 +95,10 @@ def _mtm_and_margin_check(
             "sl_pct": pos["trade"]["sl_pct"],
             "m_trend": pos["trade"].get("m_trend", 0),
             "macro_vol": pos["trade"].get("macro_vol", 0.0),
-            "risk_weight": pos["trade"].get("risk_weight", asset_risk_weights.get(sym, 0.005)),
+            "risk_weight": pos["trade"].get(
+                "risk_weight",
+                asset_risk_weights.get(sym, DEFAULTS["default_risk_per_pair"]),
+            ),
             "pnl_usd": pnl,
             "liquidated": True,
         }
@@ -356,7 +359,9 @@ def simulate_full_portfolio(
 
             risk_weight = trade.get(
                 "risk_weight",
-                asset_risk_weights.get(trade["symbol"], 0.005) if asset_risk_weights else 0.005,
+                asset_risk_weights.get(trade["symbol"], DEFAULTS["default_risk_per_pair"])
+                if asset_risk_weights
+                else DEFAULTS["default_risk_per_pair"],
             )
 
             # Trend-aligned risk multiplier (P0-B1 fix)

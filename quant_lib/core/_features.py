@@ -64,6 +64,7 @@ def prepare_data_with_max_time(
     strategy_type: int = STRATEGY_VOL_COMPRESSION,
     rsi_period: int = _DEFAULT_RSI_PERIOD,
     btc_holdout_start: pd.Timestamp | None = None,
+    apply_holdout_ema_to_full: bool = True,
 ) -> pd.DataFrame:
     """
     Compute ALL features using only data <= max_time.
@@ -72,9 +73,8 @@ def prepare_data_with_max_time(
 
     Phase 2.2: When ``btc_holdout_start`` is provided, ``macro_trend``
     (and the asset-level EMA) are computed strictly on data BEFORE this
-    timestamp, then forward-filled into the holdout. This prevents the
-    holdout's own price action from leaking into the trend signal.
-    Default ``None`` (preserves prior behavior: compute on full df).
+    timestamp, then forward-filled. Default ``None`` (preserves prior
+    behavior: compute on full df, no holdout cutoff).
 
     Parameters
     ----------
@@ -82,6 +82,28 @@ def prepare_data_with_max_time(
         0 = vol_compression (default), 1 = pullback_sniper.
     rsi_period : int
         RSI period for pullback_sniper. Default 14.
+    btc_holdout_start : pd.Timestamp | None
+        If provided, compute macro_trend EMA strictly on data BEFORE this
+        timestamp and forward-fill.
+    apply_holdout_ema_to_full : bool
+        When ``btc_holdout_start`` is provided, controls whether the
+        holdout-constant EMA is applied to the **entire** ``df`` (default
+        ``True``, the historical behavior) or only to bars ``>= btc_holdout_start``
+        (IS bars keep their own dynamic EMA, matching the WFA path).
+
+        The two modes differ in the IS period:
+        - ``True`` (default, pre-v0.4.0 behavior): IS-period macro_trend
+          uses the constant pre-holdout EMA value, NOT the dynamic per-bar
+          EMA. This is the historical behavior; useful when you want
+          the entire backtest to use a regime signal consistent with what
+          the holdout will see.
+        - ``False`` (new, opt-in): IS-period macro_trend uses the
+          standard dynamic EMA (matches the WFA path where ``btc_holdout_start``
+          is None). Use this when comparing WFA training results against
+          holdout results -- the signals will then be consistent across
+          the boundary.
+
+        See CHANGELOG v0.4.0 for rationale.
     """
     df = df_raw[df_raw["time"] <= max_time].copy()
     if df.empty:
@@ -175,6 +197,28 @@ def prepare_data_with_max_time(
         df["macro_trend"] = np.where(
             df["close"] > last_ema, 1, -1
         ).astype(np.int32)
+        # Phase 2.4 (v0.4.0): when apply_holdout_ema_to_full=False,
+        # restore the dynamic-EMA macro_trend in the IS period so it
+        # matches the WFA path. We compute the dynamic EMA on IS data
+        # ONLY (df_pre) -- this mirrors what ``prepare_data_with_max_time``
+        # would produce when called from the WFA path (where df is already
+        # filtered by max_time to IS only). The holdout period keeps the
+        # constant pre-holdout EMA so the holdout signal remains
+        # contamination-free.
+        if not apply_holdout_ema_to_full and len(df_pre) > 0:
+            is_ema_dynamic = df_pre["close"].ewm(
+                span=span_clamped, adjust=False
+            ).mean()
+            is_dynamic_trend = np.where(
+                df_pre["close"] > is_ema_dynamic, 1, -1
+            ).astype(np.int32)
+            # Assign to the IS rows in the full df (align by time).
+            # df_pre preserves the original df row order, so positional
+            # assignment is safe (both arrays have the same length and
+            # correspond to the IS portion).
+            df.loc[df["time"] < btc_holdout_start, "macro_trend"] = (
+                is_dynamic_trend
+            )
     else:
         # Original behavior: compute on full df (WFA path)
         asset_vol_annual = (
@@ -293,9 +337,20 @@ def prepare_data_with_max_time(
                 gap_end_idxs = df.index[df["time"].diff() > max_allowed].tolist()
 
     # -- ffill (fill feature-computation NaN) --
+    # Phase 4 (v0.5.0): added comment explaining ordering.
+    # ORDER MATTERS: ffill FIRST propagates the last valid pre-gap
+    # value forward into the gap window. This is desired for normal
+    # feature NaNs at the warmup head (not contamination -- we want
+    # the engine to see the most recent valid feature).
     df.ffill(inplace=True)
 
     # -- Null-out gap contamination (after ffill) --
+    # AFTER ffill, we null-out the contamination window at each gap
+    # boundary. This overwrites the (now forward-filled) gap bars
+    # with NaN, preventing pre-gap values from leaking into the gap
+    # window. If we reversed the order (null-out THEN ffill), the
+    # ffill would re-fill the gap window from pre-gap data, which
+    # would be silent data leakage.
     for pos in gap_end_idxs:
         loc = df.index.get_loc(pos)
         end_loc = min(loc + contamination_window, len(df))

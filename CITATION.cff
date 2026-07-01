@@ -10,8 +10,8 @@ abstract: >-
 authors:
   - family-names: "Winarto"
     given-names: "Hansen"
-version: 0.3.0
-date-released: 2026-06-29
+version: 0.5.1
+date-released: 2026-06-30
 license: MIT
 repository-code: "https://github.com/Hansiongs/hans-backtest"
 keywords:

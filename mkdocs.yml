@@ -34,6 +34,12 @@ nav:
   - Methodology: methodology.md
   - Testing: testing.md
   - Contributing: contributing_source.md
+  - API Reference:
+      - quant_lib: api/quant_lib.md
+      - core: api/core.md
+      - research: api/research.md
+      - audit: api/audit.md
+      - tools: api/tools.md
   - Releasing: releasing.md
   - Changelog: changelog_source.md
 

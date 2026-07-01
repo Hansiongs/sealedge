@@ -187,15 +187,28 @@ class TestLabelPValue:
         assert "RESEARCH" in mean_r_label
         assert "NO EDGE" in spa_label
 
-    def test_unknown_context_falls_back_to_mean_r(self, caplog):
-        """Unknown context strings fall back to mean_r tiers with a warning."""
-        import logging
-        with caplog.at_level(logging.WARNING):
-            label, conf, interp = label_p_value(0.03, context="bogus")
-        # Falls back to mean_r behavior
+    def test_unknown_context_raises_value_error(self):
+        """v0.4.0: unknown context strings raise ValueError instead of
+        silently falling back to mean_r tiers. Silent fallback could
+        mask typos (e.g. "spa_p" or "sharpe") and produce mislabeled
+        reports.
+        """
+        import pytest
+        with pytest.raises(ValueError, match="unknown context"):
+            label_p_value(0.03, context="bogus")
+        with pytest.raises(ValueError, match="unknown context"):
+            label_p_value(0.03, context="spa_pvalue")  # typo
+        with pytest.raises(ValueError, match="unknown context"):
+            label_p_value(0.03, context="")  # empty
+
+    def test_valid_contexts_accepted(self):
+        """All explicitly supported contexts are accepted."""
+        # mean_r
+        label, _, _ = label_p_value(0.02, context="mean_r")
         assert "TRADE" in label
-        # Logs a warning about unknown context
-        assert any("unknown context" in m for m in caplog.messages)
+        # spa
+        label, _, _ = label_p_value(0.02, context="spa")
+        assert "TRADE" in label
 
     def test_nan_with_spa_context(self):
         """NaN p-value with spa context returns UNRELIABLE (with spa mention)."""

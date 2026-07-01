@@ -45,6 +45,22 @@ def portfolio_spa(
 
     Tests whether the observed strategy edge is genuine or random,
     using time-anchored circular permutation across all assets.
+
+    Notes
+    -----
+    Internally, this function constructs a per-call correlation cache
+    (``_shared_corr_cache``) that is passed to every
+    ``simulate_full_portfolio`` invocation. **Constraints:**
+
+    - DO share within a single ``portfolio_spa`` call (the cache lives
+      in the local scope; SPA iterations reuse correlation matrices).
+    - DO NOT share across independent backtests — the cache is keyed by
+      date and will leak stale entries across backtest ranges, producing
+      wrong correlations. Each top-level backtest run gets a fresh cache.
+    - DO NOT mutate the cache externally during a single backtest run.
+
+    See ``core/_portfolio.py:simulate_full_portfolio`` for the consumer-
+    side docstring of the same constraint.
     """
     aw = asset_risk_weights  # None is allowed; portfolio sim will skip per-asset CB
 
@@ -245,7 +261,9 @@ def portfolio_spa(
                 "r_net": net_r,
                 "risk_weight": t.get(
                     "risk_weight",
-                    aw.get(sym, 0.005) if aw else 0.005,
+                    aw.get(sym, DEFAULTS["default_risk_per_pair"])
+                    if aw
+                    else DEFAULTS["default_risk_per_pair"],
                 ),
                 "trend_risk_mult": trend_mult,
             })
@@ -283,6 +301,20 @@ def portfolio_spa(
     # add-one for permutation tests (Phipson & Smyth 2010). The
     # previous label "Davé 2008" was incorrect; the formula is the
     # same but the attribution is to Phipson-Bell.
+    # Phase 3 (v0.4.1): detect when ALL SPA iterations failed to
+    # produce trades (random_equities all equal initial_capital). In
+    # that case, n_exceed would be 0 → p_value = 1/(N+1) would
+    # misleadingly suggest significance. Return p_value=1.0 (cannot
+    # reject null) instead, with a warning.
+    if np.all(random_equities == initial_capital):
+        log.warning(
+            f"SPA: all {n_iters} iterations produced empty/zero equity "
+            f"(random_equities all == initial_capital). Returning "
+            f"p_value=1.0 (cannot reject null). Check upstream "
+            f"simulate_trailing_stop_trade for trade generation."
+        )
+        return observed_final_equity, random_equities, 1.0
+
     n_exceed = int(np.sum(random_equities >= observed_final_equity))
     p_value = (n_exceed + 1) / (n_iters + 1)
     return observed_final_equity, random_equities, p_value

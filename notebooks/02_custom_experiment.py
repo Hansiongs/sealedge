@@ -1,0 +1,111 @@
+"""Generate notebooks/02_custom_experiment.ipynb.
+
+Run:    python notebooks/02_custom_experiment.py
+"""
+from __future__ import annotations
+import json
+from pathlib import Path
+
+
+def make_cell(cell_type, source):
+    return {"cell_type": cell_type, "metadata": {}, "source": source.splitlines(keepends=True)}
+
+
+def make_md(s):
+    return make_cell("markdown", s)
+
+
+def make_code(s):
+    return make_cell("code", s)
+
+
+nb = {
+    "cells": [
+        make_md(
+            "# 02 — Custom Experiment\n"
+            "\n"
+            "How to register a new strategy and run the full pipeline.\n"
+            "\n"
+            "Every experiment lives in `quant_lib/experiments/` as a "
+            "small Python file that combines a `Hypothesis` with a "
+            "`StrategyConfig` and calls `register()`."
+        ),
+        make_md("## 1. Define your hypothesis"),
+        make_code(
+            "from quant_lib.audit import Hypothesis, StrategyType\n"
+            "from quant_lib.experiments.base import (\n"
+            "    PeriodConfig, UniverseConfig, StrategyConfig, ExperimentConfig,\n"
+            ")\n"
+            "from quant_lib.experiments import register\n"
+            "\n"
+            "# Hypothesis describes the EDGE you're testing. The narrative\n"
+            "# fields are required for the experiment journal.\n"
+            "hyp = Hypothesis(\n"
+            "    name=\"my_breakout_v1\",\n"
+            "    strategy_type=StrategyType.VOL_COMPRESSION,\n"
+            "    mechanism=\"compression -> expansion breakout with volume\",\n"
+            "    expectation=\"long when EMA200 > EMA200[1] AND price breaks 20-bar high\",\n"
+            "    holding_period=\"1-3 days\",\n"
+            "    exit_rules=\"trailing stop 3 ATR\",\n"
+            "    invalidation=\"win rate < 40% over 30 OOS trades\",\n"
+            ")"
+        ),
+        make_md("## 2. Build the config"),
+        make_code(
+            "config = ExperimentConfig(\n"
+            "    name=\"my_breakout_v1\",\n"
+            "    hypothesis=hyp,\n"
+            "    period=PeriodConfig(\n"
+            "        training=(\"2020-01-01\", \"2024-12-31\"),\n"
+            "        holdout=(\"2025-01-01\", \"2025-06-30\"),\n"
+            "    ),\n"
+            "    universe=UniverseConfig(\n"
+            "        symbols=[\"BTCUSDT\", \"ETHUSDT\", \"SOLUSDT\"],\n"
+            "        min_volume_usd=10_000_000,\n"
+            "    ),\n"
+            "    strategy=StrategyConfig(\n"
+            "        leverage=3.0,\n"
+            "        pf_weight_clamp_floor=0.5,\n"
+            "        pf_weight_clamp_ceiling=1.5,\n"
+            "    ),\n"
+            ")"
+        ),
+        make_md("## 3. Register and run"),
+        make_code(
+            "register(config)\n"
+            "result = quant_lib.run_explore(\n"
+            "    experiment_name=\"my_breakout_v1\",\n"
+            "    cache_dir=\"./data_cache\",\n"
+            ")"
+        ),
+        make_md(
+            "## 4. Inspect & commit (Phase 4)\n"
+            "\n"
+            "If the SPA p-value is below your threshold and you want to "
+            "test the strategy against the holdout:\n"
+            "\n"
+            "```python\n"
+            "if result.spa_p_value < 0.05:\n"
+            "    commit_result = quant_lib.run_commit(\n"
+            "        experiment_name=\"my_breakout_v1\",\n"
+            "        cache_dir=\"./data_cache\",\n"
+            "    )\n"
+            "    print(f\"Holdout PSR: {commit_result.holdout_psr:.4f}\")\n"
+            "```\n"
+            "\n"
+            "**WARNING:** `run_commit` is IRREVERSIBLE. The holdout seal "
+            "is broken once you commit; subsequent runs cannot re-test "
+            "against the same holdout."
+        ),
+    ],
+    "metadata": {
+        "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
+        "language_info": {"name": "python", "version": "3.10"},
+    },
+    "nbformat": 4,
+    "nbformat_minor": 5,
+}
+
+out = Path(__file__).parent / "02_custom_experiment.ipynb"
+out.write_text(json.dumps(nb, indent=1, ensure_ascii=False), encoding="utf-8")
+print(f"Wrote {out}")

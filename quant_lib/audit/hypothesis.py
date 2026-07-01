@@ -57,60 +57,230 @@ STRATEGY_PULLBACK_SNIPER: int = int(StrategyType.PULLBACK_SNIPER)
 class Hypothesis:
     """Formal strategy hypothesis -- written before touching any data.
 
+    The Hypothesis is the contract between the researcher's claim ("I
+    believe X causes Y in market Z") and the framework's verification
+    pipeline (WFA + SPA + FDR). Writing it BEFORE running experiments
+    is the framework's primary defense against hindsight bias.
+
     Parameters
     ----------
     name : str
-        Short identifier for this hypothesis (e.g. "vol_breakout_v1").
+        Short identifier (e.g. ``"vol_breakout_v1"``). Must match
+        ``[a-z0-9_]+`` regex. Used as filename, registry key, and
+        CLI experiment name.
     mechanism : str
-        Logical explanation of why this strategy should have an edge.
-        Must be mechanism-based, NOT "because the backtest looks good".
+        **Required narrative field.** Logical explanation of why this
+        strategy should have an edge. Must be mechanism-based
+        ("X causes Y in market Z because..."), NOT "the backtest
+        looks good" or "I saw a pattern". The mechanism is what
+        you defend in the experiment journal.
     boundary_conditions : str
-        Conditions under which this hypothesis is expected to fail.
+        **Required narrative field.** Conditions under which the
+        hypothesis is expected to FAIL. Examples: "fails in strong
+        trend regimes without pullback", "fails on illiquid pairs
+        < 50M USD daily volume", "fails during high funding-rate
+        environments (perpetual basis blowout)".
     success_criteria : str
-        Pre-defined success metrics (e.g. "SPA p < 0.15, PF > 1.5").
-        These must be set BEFORE seeing results.
+        **Required narrative field.** Pre-defined success metrics,
+        set BEFORE seeing results. Must be specific. Examples:
+        ``"SPA p < 0.15, PF > 1.3, ≥ 30 OOS trades"``,
+        ``"PSR > 0.95 per symbol, total trades ≥ 50"``.
     entry_logic : str
-        Description of entry conditions.
+        **Required narrative field.** Human-readable description of
+        entry conditions. The actual numeric logic is in the engine;
+        this field is for the journal / reviewer.
     exit_logic : str
-        Description of exit conditions.
+        **Required narrative field.** Same as ``entry_logic`` but for
+        exit conditions (trailing stop, bailout, TP bracket).
     universe_rules : str, optional
-        Criteria for universe selection (Phase 1).
+        Criteria for universe selection (Phase 1). Example:
+        ``"Top 20 by 30-day USD volume, exclude stablecoins, age ≥ 180d"``.
     timestamp : datetime, optional
-        Auto-set to UTC time of creation.
+        Auto-set to UTC time of creation. Preserved through
+        serialization (used by ExperimentLog).
     git_commit : str, optional
-        Git commit hash at hypothesis creation time. Should be populated
-        by the caller via ``git rev-parse HEAD``.
+        Git commit hash at hypothesis creation time. Should be
+        populated by the caller via ``git rev-parse HEAD`` for
+        reproducibility auditing.
     strategy_type : int or StrategyType, optional
-        Strategy identifier. Accepts either the ``StrategyType`` enum
-        value (``StrategyType.VOL_COMPRESSION`` /
-        ``StrategyType.PULLBACK_SNIPER``) or the legacy int constant
-        (``STRATEGY_VOL_COMPRESSION = 0`` /
-        ``STRATEGY_PULLBACK_SNIPER = 1``). Stored as an int internally
-        so the value is JSON-serializable and matches the engine's
-        raw-int parameter signature.
+        Strategy identifier. Accepts ``StrategyType.VOL_COMPRESSION``
+        (0) or ``StrategyType.PULLBACK_SNIPER`` (1). Stored as int
+        internally so the value is JSON-serializable and matches
+        the engine's raw-int parameter signature.
     search_space : dict, optional
-        Per-hypothesis Optuna search space. If None, uses STATIC defaults.
+        Per-hypothesis Optuna search space (parameter_name →
+        ``(low, high)`` tuple). If None, the framework uses
+        ``DEFAULT_VOL_COMPRESSION_SEARCH_SPACE`` or
+        ``DEFAULT_PULLBACK_SNIPER_SEARCH_SPACE`` based on
+        ``strategy_type``.
     static_overrides : dict, optional
-        Per-hypothesis STATIC config overrides (e.g., custom bailout_bars).
+        Per-hypothesis STATIC config overrides (e.g.,
+        ``{"fee_taker": 0.001}`` for VIP-tier fee model).
     strategy_params : dict, optional
-        Strategy-specific params (allow_long, allow_short, rsi_period, etc).
+        Strategy-specific params. Recognized keys:
+        - ``allow_long`` (bool, default True)
+        - ``allow_short`` (bool, default True)
+        - ``rsi_period`` (int, default 14, pullback_sniper only)
     min_train_months : int, optional
         Minimum training months for WFA. Default 12.
 
-    Example
-    -------
-    >>> hyp = Hypothesis(
-    ...     name="vol_compression_breakout",
-    ...     mechanism="Volatility compression followed by volume breakout "
-    ...               "generates intraday momentum in liquid crypto futures",
-    ...     boundary_conditions="Fails in strong trend regimes without "
-    ...                        "pullback (2021 bull run)",
-    ...     success_criteria="SPA p < 0.15, PF > 1.3, min 30 trades",
-    ...     entry_logic="vol_pct_rank < 0.20 + close breaks HH_20 + rvol > 2.5",
-    ...     exit_logic="Trailing stop at ATR × 3.0, bailout at 36 bars",
-    ...     strategy_type=0,
-    ...     search_space={"vol_pct_thresh": (0.10, 0.40), ...},
+    Examples
+    --------
+    **vol_compression breakout** (using factory helper):
+
+    >>> from quant_lib.audit import for_vol_compression
+    >>> hyp = for_vol_compression(
+    ...     name="btc_breakout_v2",
+    ...     mechanism=(
+    ...         "Volatility compression followed by volume-confirmed "
+    ...         "breakout of the 20-bar high generates intraday momentum "
+    ...         "in liquid crypto perpetuals. Compression represents "
+    ...         "absorption of supply; the breakout is the release."
+    ...     ),
+    ...     boundary_conditions=(
+    ...         "Fails in low-vol accumulation regimes where no breakout "
+    ...         "follows compression. Fails on illiquid pairs (< 50M USD "
+    ...         "daily volume) where the breakout is noise. Fails during "
+    ...         "extreme funding environments where basis blowouts distort "
+    ...         "the price action."
+    ...     ),
+    ...     success_criteria="SPA p < 0.10, PF > 1.4, ≥ 40 OOS trades",
+    ...     entry_logic=(
+    ...         "vol_pct_rank < 0.15 + close > HH_20 + rvol > 3.0 + "
+    ...         "EMA200 confirmation"
+    ...     ),
+    ...     exit_logic=(
+    ...         "Trailing stop at ATR × 4.0, bailout at 48 bars, no TP "
+    ...         "bracket (vol compression rides the full move)"
+    ...     ),
+    ...     universe_rules="BTC, ETH, SOL, AVAX, MATIC — age ≥ 365d, "
+    ...                    "30d volume ≥ 100M USD",
+    ...     search_space={
+    ...         "vol_pct_thresh": (0.10, 0.25),  # tighter than default
+    ...         "trail_atr": (2.0, 5.0),
+    ...         "sl_mult": (1.5, 2.5),
+    ...         "pullback_bars": (3, 6),
+    ...     },
+    ...     min_train_months=24,  # 2 years of training data
     ... )
+
+    **pullback_sniper** (RSI + reversal):
+
+    >>> from quant_lib.audit import for_pullback_sniper
+    >>> hyp = for_pullback_sniper(
+    ...     name="rsi_reversal_v1",
+    ...     mechanism=(
+    ...         "RSI oversold/overbought extremes combined with "
+    ...         "bullish/bearish reversal candles predict short-term "
+    ...         "mean-reversion in crypto perpetuals. The RSI extreme "
+    ...         "indicates exhaustion; the reversal candle confirms "
+    ...         "the turning point."
+    ...     ),
+    ...     boundary_conditions=(
+    ...         "Fails in strong trends where RSI stays extreme for "
+    ...         "extended periods (no reversion). Fails on illiquid "
+    ...         "pairs where the reversal candle is unreliable. "
+    ...         "Fails during high-impact news events where RSI "
+    ...         "extremes are not exhaustion but continuation."
+    ...     ),
+    ...     success_criteria="SPA p < 0.15, PF > 1.3, ≥ 50 OOS trades",
+    ...     entry_logic=(
+    ...         "RSI < 25 + bullish_reversal candle (or mirror for short: "
+    ...         "RSI > 75 + bearish_reversal)"
+    ...     ),
+    ...     exit_logic=(
+    ...         "TP bracket at HH_20/LL_20 (mean-reversion target) OR "
+    ...         "trailing stop at ATR × 3.0 OR bailout at 36 bars"
+    ...     ),
+    ...     universe_rules="BTC, ETH, SOL — age ≥ 365d",
+    ...     search_space={
+    ...         "rsi_oversold": (20, 30),
+    ...         "rsi_overbought": (70, 80),
+    ...         "trail_atr": (2.0, 4.0),
+    ...         "sl_mult": (1.5, 2.5),
+    ...     },
+    ...     strategy_params={"rsi_period": 14, "allow_short": True},
+    ... )
+
+    **Custom hypothesis** (advanced — direct Hypothesis constructor):
+
+    >>> from quant_lib.audit import Hypothesis, StrategyType
+    >>> hyp = Hypothesis(
+    ...     name="hybrid_v1",
+    ...     mechanism="Hybrid: pullback setup with vol confirmation",
+    ...     boundary_conditions="Fails when both signals disagree",
+    ...     success_criteria="SPA p < 0.10, PF > 1.5",
+    ...     entry_logic="pullback_bars + vol_pct_rank < 0.20",
+    ...     exit_logic="ATR × 3.0 trail, bailout 36 bars",
+    ...     strategy_type=StrategyType.PULLBACK_SNIPER,
+    ...     search_space={"vol_pct_thresh": (0.10, 0.25)},
+    ...     strategy_params={"allow_long": True, "allow_short": False},
+    ... )
+
+    **Register + run** (full pipeline):
+
+    >>> from quant_lib.experiments.base import (
+    ...     PeriodConfig, UniverseConfig, StrategyConfig, ExperimentConfig,
+    ... )
+    >>> from quant_lib.experiments import register
+    >>> register(ExperimentConfig(
+    ...     name=hyp.name,
+    ...     strategy_type=hyp.strategy_name,
+    ...     hypothesis=hyp,
+    ...     period=PeriodConfig(
+    ...         train_start="2020-01-01",
+    ...         train_end="2024-12-31",
+    ...         holdout_months=6,  # auto-resolve holdout
+    ...     ),
+    ...     universe=UniverseConfig(
+    ...         symbols=["BTCUSDT", "ETHUSDT", "SOLUSDT"],
+    ...         min_volume_usdt=100_000_000,
+    ...         min_age_days=365,
+    ...     ),
+    ...     strategy=StrategyConfig(
+    ...         initial_capital=1000.0,
+    ...         leverage=3.0,
+    ...         wfa_trials_per_fold=80,  # default
+    ...     ),
+    ... ))
+
+    Notes
+    -----
+    **Required narrative fields** (``mechanism``, ``boundary_conditions``,
+    ``success_criteria``, ``entry_logic``, ``exit_logic``) are validated by
+    ``Hypothesis.validate()`` and the framework refuses to register an
+    experiment with missing fields. This is by design -- the sealed
+    holdout discipline requires explicit hypotheses, not ad-hoc
+    parameter sweeps.
+
+    **Common pitfalls**:
+
+    1. **Vague mechanism** -- "this looks profitable in the backtest"
+       is not a mechanism. The mechanism must explain WHY in terms
+       of market microstructure, behavioral finance, or empirical
+       regularities.
+
+    2. **Success criteria set AFTER seeing results** -- the framework
+       cannot prevent this socially, but the journal will note the
+       timestamp. If ``timestamp`` is very close to the first commit
+       timestamp, the journal marks the hypothesis as low-confidence.
+
+    3. **Search space too narrow** -- if the default Optuna search
+       ranges are tighter than your hypothesis warrants, override
+       them. E.g., a "loose compression" hypothesis should have
+       ``vol_pct_thresh: (0.05, 0.40)``, not the default (0.10, 0.40).
+
+    4. **Strategy type mismatch** -- ``strategy_type=0`` (vol_compression)
+       with search_space containing ``rsi_oversold`` will silently
+       ignore the RSI params (the vol_compression engine doesn't
+       use them). Verify the strategy_type matches your signal.
+
+    See Also
+    --------
+    for_vol_compression : Factory for vol_compression_breakout strategy.
+    for_pullback_sniper : Factory for pullback_sniper (RSI + reversal).
+    quant_lib.experiments.base.ExperimentConfig : Top-level config
+        combining Hypothesis with period/universe/strategy settings.
     """
 
     name: str
@@ -226,7 +396,139 @@ def for_vol_compression(
     strategy_params: dict | None = None,
     min_train_months: int = 12,
 ) -> Hypothesis:
-    """Factory: Hypothesis for vol_compression_breakout strategy."""
+    """Factory: Hypothesis for ``vol_compression_breakout`` strategy.
+
+    This is the canonical hypothesis factory for the vol_compression
+    strategy (engine constant ``STRATEGY_VOL_COMPRESSION = 0``). The
+    factory sets ``strategy_type=0`` and applies
+    ``DEFAULT_VOL_COMPRESSION_SEARCH_SPACE`` if no search_space is
+    provided. All other fields are required narrative content.
+
+    Parameters
+    ----------
+    name : str
+        Short identifier. Must match ``[a-z0-9_]+``. Used as the
+        registry key, filename, and CLI experiment name.
+    mechanism : str
+        Why the strategy should have an edge. See ``Hypothesis``
+        docstring for guidance and pitfalls.
+    boundary_conditions : str
+        Conditions under which the hypothesis is expected to fail.
+    success_criteria : str
+        Pre-defined success metrics (SPA p-value, PF, min trades, etc.).
+    entry_logic : str, default
+        ``"vol_pct_rank < thresh + close breaks HH_20/LL_20 + pullback"``.
+        Override only if your strategy differs meaningfully from the
+        default; the string is for journal/reviewer documentation.
+    exit_logic : str, default
+        ``"Trailing stop at ATR x trail_atr, bailout at 36 bars"``.
+    universe_rules : str, optional
+        Universe selection criteria (see Hypothesis docstring).
+    search_space : dict, optional
+        Optuna search space (parameter_name → ``(low, high)`` tuple).
+        If None, uses ``DEFAULT_VOL_COMPRESSION_SEARCH_SPACE``:
+
+        .. code-block:: python
+
+           {
+               "vol_pct_thresh": (0.10, 0.40),  # compression threshold
+               "pullback_bars": (3, 8),         # pullback wait window
+               "trail_atr": (1.5, 5.0),         # trailing stop ATR mult
+               "sl_mult": (1.0, 3.0),           # initial SL ATR mult
+           }
+
+        Override ranges that are too narrow for your hypothesis.
+
+    static_overrides : dict, optional
+        Per-hypothesis STATIC config overrides. Example:
+        ``{"fee_taker": 0.001}`` for VIP-tier fee model.
+    strategy_params : dict, optional
+        Strategy-specific params. Recognized keys:
+        - ``allow_long`` (bool, default True)
+        - ``allow_short`` (bool, default True)
+    min_train_months : int, default 12
+        Minimum training months for WFA. Increase to 24+ for more
+        robust WFA estimates on slower timeframes.
+
+    Returns
+    -------
+    Hypothesis
+        Frozen dataclass instance with ``strategy_type=0``.
+
+    Examples
+    --------
+    **Minimal usage** (uses all defaults):
+
+    >>> from quant_lib.audit import for_vol_compression
+    >>> hyp = for_vol_compression(
+    ...     name="btc_breakout_v1",
+    ...     mechanism="Vol compression + breakout in liquid crypto",
+    ...     boundary_conditions="Fails in low-vol accumulation regimes",
+    ...     success_criteria="SPA p < 0.15, PF > 1.3",
+    ... )
+
+    **Production usage** (custom search space + universe rules):
+
+    >>> hyp = for_vol_compression(
+    ...     name="btc_breakout_v2",
+    ...     mechanism=(
+    ...         "Volatility compression (vol_pct_rank < 0.15) followed by "
+    ...         "volume-confirmed breakout of the 20-bar high generates "
+    ...         "intraday momentum in liquid crypto perpetuals."
+    ...     ),
+    ...     boundary_conditions=(
+    ...         "Fails on illiquid pairs (< 50M USD daily volume). "
+    ...         "Fails during extreme funding environments where basis "
+    ...         "blowouts distort price action."
+    ...     ),
+    ...     success_criteria="SPA p < 0.10, PF > 1.4, ≥ 40 OOS trades",
+    ...     universe_rules="BTC, ETH, SOL — age ≥ 365d, 30d vol ≥ 100M USD",
+    ...     search_space={
+    ...         "vol_pct_thresh": (0.10, 0.25),  # tighter than default
+    ...         "trail_atr": (2.0, 5.0),
+    ...         "sl_mult": (1.5, 2.5),
+    ...     },
+    ...     min_train_months=24,
+    ... )
+
+    **Long-only variant** (disable shorts):
+
+    >>> hyp = for_vol_compression(
+    ...     name="btc_long_only",
+    ...     mechanism="...",
+    ...     boundary_conditions="...",
+    ...     success_criteria="...",
+    ...     strategy_params={"allow_long": True, "allow_short": False},
+    ... )
+
+    Notes
+    -----
+    **Search space guidance**:
+
+    - ``vol_pct_thresh``: lower = stricter compression (fewer trades,
+      higher per-trade quality). Default (0.10, 0.40) covers typical
+      crypto regimes. For "tight compression" strategies, try (0.05, 0.20).
+    - ``pullback_bars``: number of bars to wait for pullback after setup.
+      Higher = more patience, fewer but cleaner entries.
+    - ``trail_atr``: trailing stop ATR multiplier. Higher = wider stop,
+      more room for volatility but more drawdown per trade.
+    - ``sl_mult``: initial stop loss ATR multiplier. Lower = tighter
+      stop, higher win rate but smaller winners.
+
+    **Common pitfalls**:
+
+    1. Setting ``vol_pct_thresh: (0.05, 0.10)`` -- too tight, will
+       generate almost no trades on most pairs.
+    2. Forgetting ``allow_short: False`` for long-only strategies.
+       By default both directions are enabled.
+    3. Setting ``min_train_months < 12`` -- WFA needs at least 1 year
+       for stable PF estimates.
+
+    See Also
+    --------
+    for_pullback_sniper : RSI + reversal factory.
+    Hypothesis : Underlying dataclass.
+    """
     return Hypothesis(
         name=name,
         mechanism=mechanism,
@@ -256,7 +558,163 @@ def for_pullback_sniper(
     strategy_params: dict | None = None,
     min_train_months: int = 12,
 ) -> Hypothesis:
-    """Factory: Hypothesis for pullback_sniper strategy."""
+    """Factory: Hypothesis for ``pullback_sniper`` (RSI + reversal) strategy.
+
+    This is the canonical hypothesis factory for the pullback_sniper
+    strategy (engine constant ``STRATEGY_PULLBACK_SNIPER = 1``). The
+    factory sets ``strategy_type=1`` and applies
+    ``DEFAULT_PULLBACK_SNIPER_SEARCH_SPACE`` if no search_space is
+    provided.
+
+    Pullback sniper differs from vol_compression in three ways:
+    1. Uses RSI extremes (not vol compression) as the primary signal
+    2. Uses reversal candles (bullish_reversal / bearish_reversal) for confirmation
+    3. Adds a TP bracket at HH_20/LL_20 (mean-reversion target), in
+       addition to the trailing stop
+
+    Parameters
+    ----------
+    name : str
+        Short identifier. Must match ``[a-z0-9_]+``.
+    mechanism : str
+        Why the strategy should have an edge. The default mechanism
+        is "RSI oversold/overbought extremes + reversal candles predict
+        short-term mean-reversion". Override for custom mechanisms.
+    boundary_conditions : str
+        Conditions under which the hypothesis is expected to fail.
+        Examples:
+        - "fails in strong trends where RSI stays extreme for extended periods"
+        - "fails on illiquid pairs where reversal candles are unreliable"
+        - "fails during high-impact news events where RSI extremes are
+          continuation, not exhaustion"
+    success_criteria : str
+        Pre-defined success metrics.
+    entry_logic : str, default
+        ``"RSI < oversold + bullish_reversal candle (or mirror for short)"``.
+    exit_logic : str, default
+        ``"Trailing stop OR TP at hh_20/ll_20 OR bailout at 36 bars"``.
+        The TP bracket (HH_20/LL_20) is the mean-reversion target.
+    universe_rules : str, optional
+        Universe selection criteria.
+    search_space : dict, optional
+        Optuna search space. If None, uses
+        ``DEFAULT_PULLBACK_SNIPER_SEARCH_SPACE``:
+
+        .. code-block:: python
+
+           {
+               "vol_pct_thresh": (0.10, 0.40),  # unused but kept for compat
+               "pullback_bars": (3, 8),         # unused but kept for compat
+               "trail_atr": (1.5, 5.0),
+               "sl_mult": (1.0, 3.0),
+               "rsi_oversold": (25, 35),        # primary signal
+               "rsi_overbought": (65, 75),      # primary signal
+           }
+
+        The vol_pct_thresh and pullback_bars keys are unused by the
+        pullback_sniper engine but kept for registry compatibility.
+        Focus tuning on ``rsi_oversold``, ``rsi_overbought``,
+        ``trail_atr``, and ``sl_mult``.
+
+    static_overrides : dict, optional
+        Per-hypothesis STATIC config overrides.
+    strategy_params : dict, optional
+        Strategy-specific params. Recognized keys:
+        - ``allow_long`` (bool, default True)
+        - ``allow_short`` (bool, default True)
+        - ``rsi_period`` (int, default 14) — Wilder smoothing period
+          for the RSI calculation. Most users should keep the default.
+    min_train_months : int, default 12
+
+    Returns
+    -------
+    Hypothesis
+        Frozen dataclass instance with ``strategy_type=1``.
+
+    Examples
+    --------
+    **Minimal usage** (uses all defaults):
+
+    >>> from quant_lib.audit import for_pullback_sniper
+    >>> hyp = for_pullback_sniper(
+    ...     name="rsi_reversal_v1",
+    ...     mechanism="RSI extremes + reversal candles = mean-reversion",
+    ...     boundary_conditions="Fails in strong trends (RSI stays extreme)",
+    ...     success_criteria="SPA p < 0.15, PF > 1.3",
+    ... )
+
+    **Production usage** (conservative RSI thresholds + long-only):
+
+    >>> hyp = for_pullback_sniper(
+    ...     name="rsi_reversal_v2",
+    ...     mechanism=(
+    ...         "RSI < 25 indicates exhaustion (overbought/oversold "
+    ...         "extreme); bullish_reversal candle confirms the turning "
+    ...         "point. Together they predict short-term mean-reversion "
+    ...         "in crypto perpetuals."
+    ...     ),
+    ...     boundary_conditions=(
+    ...         "Fails in strong trends where RSI stays extreme for "
+    ...         "extended periods (no reversion). Fails on illiquid "
+    ...         "pairs where reversal candles are unreliable."
+    ...     ),
+    ...     success_criteria="SPA p < 0.10, PF > 1.4, ≥ 50 OOS trades",
+    ...     universe_rules="BTC, ETH, SOL — age ≥ 365d",
+    ...     search_space={
+    ...         "rsi_oversold": (20, 30),     # stricter than default
+    ...         "rsi_overbought": (70, 80),  # stricter than default
+    ...         "trail_atr": (2.0, 4.0),
+    ...         "sl_mult": (1.5, 2.5),
+    ...     },
+    ...     strategy_params={
+    ...         "allow_long": True,
+    ...         "allow_short": False,  # long-only
+    ...         "rsi_period": 14,      # Wilder's default
+    ...     },
+    ...     min_train_months=24,
+    ... )
+
+    **RSI period override** (faster-reacting RSI):
+
+    >>> hyp = for_pullback_sniper(
+    ...     name="rsi_fast_v1",
+    ...     mechanism="Fast RSI (period=7) catches short-term extremes",
+    ...     boundary_conditions="Fails in choppy markets (RSI whipsaws)",
+    ...     success_criteria="...",
+    ...     strategy_params={"rsi_period": 7},
+    ... )
+
+    Notes
+    -----
+    **Search space guidance**:
+
+    - ``rsi_oversold`` (default 25-35): lower = stricter oversold,
+      fewer but cleaner entries. < 20 may miss valid setups; > 35
+      generates noise trades.
+    - ``rsi_overbought`` (default 65-75): symmetric to oversold.
+      Keep rsi_overbought - 100 = -rsi_oversold for symmetric signals.
+    - ``trail_atr``: trailing stop. For mean-reversion, narrower than
+      vol_compression (default 1.5-5.0) is often better.
+    - ``sl_mult``: initial SL. Wider for mean-reversion (the thesis
+      is the move reverts; the SL protects against continued trend).
+
+    **Common pitfalls**:
+
+    1. Setting ``rsi_oversold: (35, 45)`` -- not extreme enough,
+       generates false signals on every minor pullback.
+    2. Forgetting to disable shorts for "long-only reversal" -- by
+       default both directions are enabled, which doubles the trade
+       count and may dilute the reversal signal quality.
+    3. Setting ``rsi_period < 7`` -- RSI becomes noisy, false
+       reversal signals dominate.
+    4. Using this strategy on < 50 trades per year assets -- RSI
+       signals require sufficient sample size for reliable PSR.
+
+    See Also
+    --------
+    for_vol_compression : Vol compression + breakout factory.
+    Hypothesis : Underlying dataclass.
+    """
     return Hypothesis(
         name=name,
         mechanism=mechanism,

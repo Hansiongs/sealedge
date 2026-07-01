@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "quant_lib"
-version = "0.3.0"
+version = "0.5.1"
 description = "Honest backtesting toolkit for quantitative trading strategies with sealed holdout discipline"
 readme = "README.md"
 license = {text = "MIT"}

@@ -4,37 +4,53 @@ Date: To be captured — first CI run (mutation.yml, weekly Monday 03:00 UTC)
 Scope: quant_lib/research/candidate.py + commit.py (pyproject.toml [tool.mutmut])
 Method: mutmut run --max-children 4
 
-Capturing the baseline
-----------------------
-The CI workflow `.github/workflows/mutation.yml` runs on Ubuntu every
-Monday 03:00 UTC and on manual trigger (workflow_dispatch). The first
-run will produce the baseline; subsequent runs should be compared
-against it.
+Status (Phase 4 — v0.5.0)
+--------------------------
+Baseline NOT yet captured. The CI workflow runs weekly on Ubuntu and
+produces the baseline automatically on first execution. This file
+documents the capture procedure and acceptance threshold.
 
-To capture locally (Linux/WSL):
-    MUTMUT_RUNNING_IN_BATCH=1 mutmut run --max-children 4
-    mutmut stats
-
-Triggering from GitHub Actions UI
-----------------------------------
+To capture the baseline
+------------------------
+**Option A — GitHub Actions (recommended):**
 1. Open https://github.com/Hansiongs/hans-backtest/actions/workflows/mutation.yml
 2. Click "Run workflow" ▾ (dropdown on the right)
 3. Branch: main
 4. Click "Run workflow"
+5. After completion (~30-60 min), download the `mutmut-report`
+   artifact from the workflow run
+6. Extract `mutation_score.txt` — this is the baseline score
+7. Update the "Expected score" section below with the captured value
 
-The workflow runs mutmut on Ubuntu. After completion:
-1. Download the `mutmut-report` artifact from the workflow run
-2. Extract `mutation_score.txt` — this is the baseline
-3. Copy the score here:
-   - Baseline score: _______ (populate from artifact)
-   - Date: _______ (populate from artifact)
+**Option B — Local (Linux/WSL required; mutmut does not support Windows):**
+    MUTMUT_RUNNING_IN_BATCH=1 mutmut run --max-children 4
+    mutmut stats
 
-Expected score
---------------
-(TBD — populated from first CI run artifact)
+Expected score (TBD)
+--------------------
+Baseline score: _______ (populate from first CI run artifact)
+Captured on:    _______ (populate from artifact)
 
-Threshold
----------
+Acceptance threshold
+--------------------
 The mutation score should not drop by more than 5 percentage points
 between releases. If it does, the new code is insufficiently tested
 and needs additional coverage before release.
+
+CI enforcement (planned for v0.5.x)
+------------------------------------
+The workflow `.github/workflows/mutation.yml` will be enhanced to:
+1. Parse the baseline score from this file
+2. Compare current run's score against baseline
+3. Fail the workflow if the drop exceeds the 5pp threshold
+
+Until the baseline is captured, this enforcement is a no-op.
+
+Phase 4 changes affecting mutation scope
+----------------------------------------
+- v0.4.0 (Phase 2): added dataclass field declarations to
+  `research/candidate.py` — may reduce killable mutants slightly.
+- v0.4.1 (Phase 3): added additive guards — minimal mutation impact.
+
+No changes to `commit.py` signature or semantics in Phase 1-3.
+

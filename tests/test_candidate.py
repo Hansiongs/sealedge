@@ -29,6 +29,31 @@ class TestCandidateInit:
             assert cand.n_executed == 0
             assert cand.n_rejected == 0
 
+    def test_init_declares_is_trades_field(self):
+        """v0.4.0 (Phase 2.4): _is_trades_per_fold_by_sym must exist
+        at __init__ as a dataclass field (not lazily via hasattr).
+
+        This avoids .pyc cache mismatch bugs and makes the field
+        visible to type checkers / IDE autocomplete.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            session = ResearchSession(
+                training_period=("2020-01-01", "2024-12-31"),
+                holdout_period=("2025-01-01", "2025-06-30"),
+                symbols=["BTCUSDT"],
+                cache_dir=tmp, _skip_holdout_load=True,
+            )
+            cand = session.create_candidate(for_vol_compression("v1", "m", "b", "c"))
+            # Field must be in dataclass fields (not lazily attached)
+            from dataclasses import fields
+            field_names = {f.name for f in fields(cand)}
+            assert "_is_trades_per_fold_by_sym" in field_names, (
+                f"_is_trades_per_fold_by_sym must be a dataclass field, not "
+                f"lazily attached. Got fields: {field_names}"
+            )
+            # Initial value must be empty dict (not missing attribute)
+            assert cand._is_trades_per_fold_by_sym == {}
+
     def test_default_strategy_is_strategy_config(self):
         """Without explicit strategy, Candidate uses StrategyConfig() defaults."""
         with tempfile.TemporaryDirectory() as tmp:

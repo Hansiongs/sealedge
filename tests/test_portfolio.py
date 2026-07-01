@@ -1,5 +1,7 @@
 """Tests for portfolio simulation — MTM, margin, circuit breaker."""
 
+import inspect
+
 import pandas as pd
 
 from quant_lib.core._portfolio import (
@@ -26,6 +28,61 @@ class TestTradeKey:
              "exit_time": pd.Timestamp("2022-01-02")}
         key = _trade_key(t)
         assert key[-1] == 0
+
+
+class TestRiskWeightFallbackConsistency:
+    """v0.4.0 (Phase 2.4): risk_weight fallback must use
+    DEFAULTS["default_risk_per_pair"] (the configured default), not a
+    hardcoded magic number. Both fallback sites in _portfolio.py must
+    be consistent.
+    """
+
+    def test_no_hardcoded_risk_weight_fallback(self):
+        """_portfolio.py must not contain hardcoded 0.005 risk_weight fallback.
+
+        Bug #6: previously, when a trade had no ``risk_weight`` field
+        AND ``asset_risk_weights`` didn't have the symbol, the code
+        fell back to a hardcoded 0.005. This was inconsistent with the
+        WFA path which uses ``DEFAULTS["default_risk_per_pair"]``.
+
+        Only check lines that look like risk_weight fallbacks
+        (``trade.get(`` or ``pos["trade"].get(`` near ``risk_weight``).
+        """
+        from quant_lib.core import _portfolio as portfolio_module
+        source = inspect.getsource(portfolio_module)
+        for line in source.splitlines():
+            # Check lines that are risk-weight fallback sites: the
+            # pattern is ``trade.get(`` or ``pos["trade"].get(`` near
+            # the keyword "risk_weight", with a literal numeric fallback
+            # of 0.005.
+            stripped = line.strip()
+            if "risk_weight" in stripped and "0.005" in stripped:
+                # Allow 0.005 if it's clearly an unrelated constant
+                # (e.g. liquidation_fee_pct default value).
+                if "liquidation_fee" in stripped:
+                    continue
+                # Allow comments mentioning "0.005" in a different context
+                if stripped.startswith("#") or stripped.startswith('"""'):
+                    continue
+                pytest.fail(
+                    f"_portfolio.py has hardcoded 0.005 risk_weight fallback. "
+                    f"Use DEFAULTS['default_risk_per_pair'] instead. "
+                    f"Line: {line!r}"
+                )
+
+    def test_default_risk_per_pair_is_used(self):
+        """Source-level: fallback uses DEFAULTS['default_risk_per_pair']."""
+        from quant_lib.core import _portfolio as portfolio_module
+        source = inspect.getsource(portfolio_module)
+        # Count uses of default_risk_per_pair in risk_weight contexts
+        # (both the open-position fallback and the entry fallback)
+        count = source.count("default_risk_per_pair")
+        # Both fallback sites (entry at line ~98, entry at line ~359)
+        # should reference this config key
+        assert count >= 2, (
+            f"Expected at least 2 DEFAULTS['default_risk_per_pair'] uses in "
+            f"_portfolio.py for both risk_weight fallback sites, got {count}"
+        )
 
 
 class TestSimulateFullPortfolio:

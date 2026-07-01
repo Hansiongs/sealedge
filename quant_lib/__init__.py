@@ -22,7 +22,7 @@ from quant_lib.research import CommitResult  # noqa: F401
 
 # Version is set in pyproject.toml and accessible via importlib.metadata
 # but we keep a hardcoded fallback for direct access
-__version__: str = "0.3.0"
+__version__: str = "0.5.1"
 
 
 # === High-level Python API ===

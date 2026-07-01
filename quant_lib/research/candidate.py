@@ -83,6 +83,14 @@ class Candidate:
     narrowing_rule: str = ""
     narrowing_context: str = ""
 
+    # Phase 2.5 (IS-decoupled PF allocator input): per-symbol list of
+    # IS trade lists keyed by fold order. Initialized at __init__ rather
+    # than lazily via hasattr so the attribute always exists (no
+    # .pyc cache mismatches, no hasattr checks in hot paths).
+    _is_trades_per_fold_by_sym: dict[str, list[list[dict]]] = field(
+        default_factory=dict, init=False, repr=False
+    )
+
     # Frozen params (for commit)
     frozen_params: dict[str, dict] = field(default_factory=dict)
 
@@ -312,10 +320,10 @@ class Candidate:
                 self.fold_params[sym] = fold_params
             # Phase 2.5: accumulate IS trades for PF allocation. We
             # use a dict keyed by fold_key to keep fold ordering
-            # consistent with OOS.
+            # consistent with OOS. ``_is_trades_per_fold_by_sym`` is
+            # declared in __init__ (via dataclass field) so no hasattr
+            # check is needed (Phase 2.4 v0.4.0 cleanup).
             if is_trades_per_fold:
-                if not hasattr(self, "_is_trades_per_fold_by_sym"):
-                    self._is_trades_per_fold_by_sym = {}
                 self._is_trades_per_fold_by_sym[sym] = is_trades_per_fold
 
         if not self.all_oos_trades:
@@ -332,20 +340,63 @@ class Candidate:
         )
 
         # Per-fold PF-weighted risk allocation (X1 scheme).
-        # Phase 2.5 refactor: 3-tuple return from run_wfa_per_symbol
-        # now also exposes IS trades (per-fold). The current
-        # allocator still uses OOS trades (backward compat). Future
-        # work: pass IS trades to the allocator to fully decouple
-        # the meta-allocator from the strategy selector.
-        risk_summary = apply_pf_weighted_risk_allocation(
-            self.all_oos_trades,
-            halflife_folds=self.strategy.pf_decay_halflife_folds,
-            clamp_floor=self.strategy.pf_weight_clamp_floor,
-            clamp_ceiling=self.strategy.pf_weight_clamp_ceiling,
-            min_trades=self.strategy.pf_min_trades_for_weight,
-            baseline_per_symbol=DEFAULTS["default_risk_per_pair"],
-            n_total_symbols=len(self.eligible_symbols),
-        )
+        # Phase LOW-1: use IS-decoupled allocator when IS trades are
+        # available. This decouples the meta-allocator from the
+        # strategy selector (avoids double-use of OOS trades for both
+        # SPA p-value and risk weighting). Falls back to OOS-based
+        # allocator when IS trades are not available (backward compat).
+        # Field is declared in __init__ via dataclass field, so we can
+        # access directly (no getattr needed) -- Phase 2.4 cleanup.
+        is_trades_per_fold_by_sym = self._is_trades_per_fold_by_sym
+        # IS trades already carry a ``fold_key`` field (set by
+        # ``_run_engine_on_data`` in ``core/_wfa.py``). Group them
+        # by fold_key across symbols. Allocator needs only symbol
+        # and r_net from each trade dict.
+        is_pool: dict[str, list[dict]] = {}
+        for sym_fold_trades_list in is_trades_per_fold_by_sym.values():
+            for sym_fold_trades in sym_fold_trades_list:
+                for t in sym_fold_trades:
+                    fk = t.get("fold_key")
+                    if fk is None:
+                        continue
+                    is_pool.setdefault(fk, []).append(t)
+
+        # Get sorted OOS fold_keys (allocator needs chronological order).
+        oos_fold_keys_sorted = sorted(is_pool.keys())
+
+        if (is_pool
+                and oos_fold_keys_sorted
+                and len(is_pool) == len(set(
+                    t.get("fold_key") for t in self.all_oos_trades
+                    if t.get("fold_key")
+                ))):
+            # IS trades available for all OOS folds: use IS-decoupled
+            # allocator.
+            from quant_lib.core._risk_allocation import (
+                apply_pf_weighted_risk_allocation_is,
+            )
+            risk_summary = apply_pf_weighted_risk_allocation_is(
+                self.all_oos_trades,
+                is_trades_per_fold=is_pool,
+                halflife_folds=self.strategy.pf_decay_halflife_folds,
+                clamp_floor=self.strategy.pf_weight_clamp_floor,
+                clamp_ceiling=self.strategy.pf_weight_clamp_ceiling,
+                min_trades=self.strategy.pf_min_trades_for_weight,
+                baseline_per_symbol=DEFAULTS["default_risk_per_pair"],
+                n_total_symbols=len(self.eligible_symbols),
+            )
+        else:
+            # Fallback: OOS-based allocator (legacy behavior, used
+            # when IS trades are not available).
+            risk_summary = apply_pf_weighted_risk_allocation(
+                self.all_oos_trades,
+                halflife_folds=self.strategy.pf_decay_halflife_folds,
+                clamp_floor=self.strategy.pf_weight_clamp_floor,
+                clamp_ceiling=self.strategy.pf_weight_clamp_ceiling,
+                min_trades=self.strategy.pf_min_trades_for_weight,
+                baseline_per_symbol=DEFAULTS["default_risk_per_pair"],
+                n_total_symbols=len(self.eligible_symbols),
+            )
         # Map every eligible symbol to a per-symbol weight, falling
         # back to the default for symbols not present in the last
         # fold (they didn't trade there). Empty dict if no folds ran

@@ -19,6 +19,31 @@ _DailyCloseMatrix = dict[str, dict]
 _DailyHLMatrix = dict[str, dict]
 
 
+def _coefficient_of_variation(values: np.ndarray, ddof: int = 1) -> float:
+    """Coefficient of variation = std / mean * 100.
+
+    Helper extracted in Phase 3 (v0.4.1) to dedup 5× inline CV
+    calculations in ``print_param_stability``. Returns 0.0 if mean
+    is near zero (avoids div-by-zero).
+
+    Parameters
+    ----------
+    values : np.ndarray
+        Array of values.
+    ddof : int
+        Delta degrees of freedom for std. Default 1 (sample std).
+
+    Returns
+    -------
+    float
+        CV in percent. 0.0 if |mean| < 1e-12.
+    """
+    mean_val = float(np.mean(values))
+    if abs(mean_val) < 1e-12:
+        return 0.0
+    return float(np.std(values, ddof=ddof) / abs(mean_val) * 100)
+
+
 def build_daily_matrices(
     symbols: list[str], precomputed_data: dict[str, pd.DataFrame]
 ) -> tuple[_DailyCloseMatrix, _DailyHLMatrix]:
@@ -52,7 +77,59 @@ def build_daily_matrices(
 def run_bootstrap(
     daily_ret: pd.Series, eq_series: pd.Series, max_dd: float, initial_capital: float
 ) -> dict[str, float]:
-    """Circular block bootstrap for worst-case CAGR and DD estimates."""
+    """Circular block bootstrap for worst-case CAGR and DD estimates.
+
+    Convention
+    ----------
+    ``max_dd`` MUST be a **negative** percentage (e.g. ``-25.0`` for a 25%
+    drawdown). All bootstrap drawdowns are computed in negative-decimal
+    form internally and converted to negative percent for output. The
+    percentile comparison ``dd_pctile`` assumes consistent sign:
+
+        dd_pctile = fraction of bootstrap DDs that are <= observed
+
+    where both values are negative. So a dd_pctile of 80% means 80% of
+    bootstrap scenarios were AT LEAST AS BAD as the observed drawdown
+    (i.e. observed is in the 80th percentile of severity -- severe).
+
+    Parameters
+    ----------
+    daily_ret : pd.Series
+        Daily return series (decimal, not percent).
+    eq_series : pd.Series
+        Equity curve series (used for CAGR annualization).
+    max_dd : float
+        **Negative** max drawdown in percent (e.g. -20.0 for -20%).
+        Callers in ``research/commit.py:500`` and ``research/reporting.py:170``
+        compute this as
+        ``((eq - eq.cummax()) / eq.cummax()).min() * 100`` which yields
+        a negative value.
+    initial_capital : float
+        Starting capital (used for percentile equity computation).
+
+    Returns
+    -------
+    dict
+        ``Worst5_CAGR``: 5th-percentile annualized CAGR (percent).
+        ``Worst95_DD``: 95th-percentile max drawdown (percent, negative).
+        ``Worst5_DD``: 5th-percentile max drawdown (percent, negative).
+        ``Worst1_DD``: 1st-percentile max drawdown (percent, negative).
+        ``DD_Pctile``: percentile rank of observed DD within bootstrap null
+            (0-100). Higher = more severe observed DD.
+        ``BootstrapBlock``: block size used for the circular bootstrap.
+
+    Raises
+    ------
+    AssertionError
+        If ``max_dd > 0`` (positive drawdown is invalid; convention is
+        negative).
+    """
+    assert max_dd <= 0, (
+        f"run_bootstrap requires max_dd as a NEGATIVE percentage "
+        f"(e.g. -25.0 for 25%% drawdown), got {max_dd}. "
+        f"Callers should compute max_dd as "
+        f"((eq - eq.cummax()) / eq.cummax()).min() * 100."
+    )
     n_sim = STATIC["bootstrap_n_sim"]
     n_ret = len(daily_ret)
     block_size = max(
@@ -100,6 +177,7 @@ def run_trade_bootstrap(
     initial_capital: float,
     n_sim: int = 2000,
     block_size: int = 5,
+    trade_dates: "pd.DatetimeIndex | None" = None,
 ) -> dict[str, float]:
     """Circular block bootstrap on TRADE R-multiples (Phase 4.1).
 
@@ -130,6 +208,13 @@ def run_trade_bootstrap(
     block_size : int
         Block size for circular block bootstrap (preserves short-
         range serial correlation). Default 5 trades.
+    trade_dates : pd.DatetimeIndex, optional
+        Datetime index aligned with ``trade_r_vals`` (same length).
+        If provided, CAGR is annualized using the actual span
+        ``(trade_dates[-1] - trade_dates[0]).days`` instead of
+        treating 1 trade ≈ 1 day. Recommended for sparse strategies
+        where trades span long periods. Phase 3 (v0.4.1): added
+        for accurate CAGR calculation.
 
     Returns
     -------
@@ -154,7 +239,20 @@ def run_trade_bootstrap(
     r_arr = np.asarray(trade_r_vals, dtype=np.float64)
     rng = np.random.default_rng(GLOBAL_SEED + 99999)
     n_blocks = int(np.ceil(n / block_size))
-    n_days = n  # proxy for CAGR: treat 1 trade ≈ 1 day
+    # Phase 3 (v0.4.1): use actual date span if provided, else fall back
+    # to n (1 trade ≈ 1 day proxy). The proxy over-inflates CAGR for
+    # sparse strategies (e.g. 100 trades over 2 years → annualized as
+    # 100 days instead of ~730 days).
+    if trade_dates is not None and len(trade_dates) == n:
+        n_days = max(int((trade_dates[-1] - trade_dates[0]).days) + 1, 1)
+    else:
+        if trade_dates is not None and len(trade_dates) != n:
+            log.warning(
+                f"run_trade_bootstrap: trade_dates length ({len(trade_dates)}) "
+                f"does not match trade_r_vals length ({n}). Falling back to "
+                f"1 trade ≈ 1 day proxy."
+            )
+        n_days = n
     ending_equities = []
     max_dds = []
 
@@ -323,10 +421,8 @@ def print_param_stability(
                 # `list[str]` declared at line 152 (table rows).
                 cv_inner: list[float] = param_vals[pn]
                 if len(cv_inner) >= 2:
-                    cv_p = (
-                        float(np.std(cv_inner, ddof=1))
-                        / abs(float(np.mean(cv_inner)))
-                    ) * 100
+                    # Phase 3 (v0.4.1): use _coefficient_of_variation helper.
+                    cv_p = _coefficient_of_variation(np.asarray(cv_inner))
                     cvs.append(cv_p)
             if cvs:
                 mean_cv = float(np.mean(cvs))

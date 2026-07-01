@@ -220,7 +220,7 @@ def fast_trade_loop(
                     else -(accumulated_funding * 100.0)
                 )
 
-                atr_pct = (atrs[i] / closes[i]) * 100.0
+                atr_pct = (atrs[i] / closes[i]) * 100.0 if closes[i] > 0.0 else 0.0
                 base_exit_slip = min(max(0.010 * (atr_pct / 0.5), 0.005), 0.15)
 
                 # NOTE: Weekend penalty application is asymmetric (H-4 doc).
@@ -245,7 +245,7 @@ def fast_trade_loop(
                     if trade_state == 1
                     else ((entry_price - exit_price_val) / sl_dist_val)
                 )
-                sl_pct_pct = (sl_dist_val / entry_price) * 100.0
+                sl_pct_pct = (sl_dist_val / entry_price) * 100.0 if entry_price > 0.0 else 0.0
 
                 cost_total = (
                     (fee_taker * 2) + current_entry_slip + exit_slip
@@ -450,7 +450,7 @@ def fast_trade_loop(
         )
 
         exit_price_val = closes[n - 1]
-        atr_pct = (atrs[n - 1] / closes[n - 1]) * 100.0
+        atr_pct = (atrs[n - 1] / closes[n - 1]) * 100.0 if closes[n - 1] > 0.0 else 0.0
         base_exit_slip = min(max(0.010 * (atr_pct / 0.5), 0.005), 0.15)
 
         held_over_weekend = np.sum(is_weekends[entry_bar_idx:n]) > 0
@@ -467,7 +467,7 @@ def fast_trade_loop(
             if trade_state == 1
             else ((entry_price - exit_price_val) / sl_dist_val)
         )
-        sl_pct_pct = (sl_dist_val / entry_price) * 100.0
+        sl_pct_pct = (sl_dist_val / entry_price) * 100.0 if entry_price > 0.0 else 0.0
 
         cost_total = (
             (fee_taker * 2) + current_entry_slip + exit_slip
@@ -566,9 +566,12 @@ def simulate_trailing_stop_trade(
 
     exit_idx = -1
     exit_price_val = 0.0
-    max_idx = min(entry_idx + bailout_bars, n)
+    # Phase 3 (v0.4.1): renamed from `max_idx` (misleading -- sounds like
+    # "maximum seen", but it's actually the UPPER bound of the bailout
+    # window). `exit_limit_idx` makes the intent explicit.
+    exit_limit_idx = min(entry_idx + bailout_bars, n)
 
-    for i in range(entry_idx, max_idx):
+    for i in range(entry_idx, exit_limit_idx):
         if direction == 1:
             highest_price = max(highest_price, highs[i])
             sl_level = max(sl_level, highest_price - (atrs[i] * trail_atr))
@@ -597,7 +600,7 @@ def simulate_trailing_stop_trade(
                     break
 
     if exit_idx == -1:
-        exit_idx = max_idx - 1
+        exit_idx = exit_limit_idx - 1
         exit_price_val = closes[exit_idx]
 
     accumulated_funding = 0.0
@@ -623,7 +626,7 @@ def simulate_trailing_stop_trade(
         ((exit_price_val - entry_price) / sl_dist) if direction == 1
         else ((entry_price - exit_price_val) / sl_dist)
     )
-    sl_pct_pct = (sl_dist / entry_price) * 100.0
+    sl_pct_pct = (sl_dist / entry_price) * 100.0 if entry_price > 0.0 else 0.0
 
     cost_total = (
         (fee_taker * 2.0) + entry_slip + exit_slip

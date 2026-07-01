@@ -208,3 +208,103 @@ class TestMacroTrendHoldoutIsolation:
         # Both should be in {-1, 1} (binary signal)
         assert last_truncated_trend in [-1, 1]
         assert holdout_first_trend in [-1, 1]
+
+
+class TestApplyHoldoutEMAToFull:
+    """v0.4.0 (Phase 2.4): apply_holdout_ema_to_full flag.
+
+    Default ``True`` preserves historical behavior (constant pre-holdout
+    EMA applied across the full df, including IS period). Setting
+    ``False`` restores the dynamic EMA in the IS period so it matches
+    the WFA path (where btc_holdout_start is None).
+    """
+
+    def test_default_true_constant_in_holdout(self, sample_hourly_data, sample_btc_data):
+        """Default behavior: constant EMA threshold in holdout region."""
+        max_time = sample_hourly_data["time"].max()
+        all_times = sample_hourly_data["time"].sort_values().unique()
+        btc_holdout_start = all_times[len(all_times) * 3 // 4]
+
+        result = prepare_data_with_max_time(
+            sample_hourly_data, sample_btc_data, None, max_time,
+            btc_holdout_start=btc_holdout_start,
+        )
+        # Holdout trend values are still {-1, 1} (binary)
+        assert result["macro_trend"].dropna().isin([-1, 1]).all()
+
+    def test_explicit_true_matches_default(self, sample_hourly_data, sample_btc_data):
+        """Passing apply_holdout_ema_to_full=True must match default."""
+        max_time = sample_hourly_data["time"].max()
+        all_times = sample_hourly_data["time"].sort_values().unique()
+        btc_holdout_start = all_times[len(all_times) * 3 // 4]
+
+        result_default = prepare_data_with_max_time(
+            sample_hourly_data, sample_btc_data, None, max_time,
+            btc_holdout_start=btc_holdout_start,
+        )
+        result_explicit = prepare_data_with_max_time(
+            sample_hourly_data, sample_btc_data, None, max_time,
+            btc_holdout_start=btc_holdout_start,
+            apply_holdout_ema_to_full=True,
+        )
+        # macro_trend should be identical between default and explicit
+        pd.testing.assert_series_equal(
+            result_default["macro_trend"].reset_index(drop=True),
+            result_explicit["macro_trend"].reset_index(drop=True),
+            check_names=False,
+        )
+
+    def test_explicit_false_restores_dynamic_ema_in_is(
+        self, sample_hourly_data, sample_btc_data
+    ):
+        """With apply_holdout_ema_to_full=False, IS region uses dynamic EMA.
+
+        The IS-period macro_trend should MATCH the dynamic-EMA computation
+        (the WFA path), not the constant pre-holdout EMA.
+        """
+        max_time = sample_hourly_data["time"].max()
+        all_times = sample_hourly_data["time"].sort_values().unique()
+        btc_holdout_start = all_times[len(all_times) * 3 // 4]
+
+        # Path 1: constant EMA in IS (default)
+        result_constant = prepare_data_with_max_time(
+            sample_hourly_data, sample_btc_data, None, max_time,
+            btc_holdout_start=btc_holdout_start,
+            apply_holdout_ema_to_full=True,
+        )
+        # Path 2: dynamic EMA in IS, constant in holdout
+        result_dynamic_is = prepare_data_with_max_time(
+            sample_hourly_data, sample_btc_data, None, max_time,
+            btc_holdout_start=btc_holdout_start,
+            apply_holdout_ema_to_full=False,
+        )
+        # Path 3: pure dynamic EMA (no holdout cutoff) -- reference
+        result_pure_dynamic = prepare_data_with_max_time(
+            sample_hourly_data, sample_btc_data, None, max_time,
+        )
+
+        # IS-period macro_trend in path 2 should match path 3 (dynamic)
+        is_mask = sample_hourly_data["time"] < btc_holdout_start
+        is_dynamic = result_dynamic_is.loc[is_mask, "macro_trend"].dropna()
+        is_pure = result_pure_dynamic.loc[is_mask, "macro_trend"].dropna()
+        if len(is_dynamic) > 0 and len(is_pure) > 0:
+            pd.testing.assert_series_equal(
+                is_dynamic.reset_index(drop=True),
+                is_pure.reset_index(drop=True),
+                check_names=False,
+                obj=f"IS macro_trend with apply_holdout_ema_to_full=False "
+                    f"must equal pure-dynamic path",
+            )
+
+        # Holdout-period macro_trend in path 2 should match path 1 (constant)
+        holdout_mask = sample_hourly_data["time"] >= btc_holdout_start
+        ho_dynamic_is = result_dynamic_is.loc[holdout_mask, "macro_trend"].dropna()
+        ho_constant = result_constant.loc[holdout_mask, "macro_trend"].dropna()
+        if len(ho_dynamic_is) > 0 and len(ho_constant) > 0:
+            pd.testing.assert_series_equal(
+                ho_dynamic_is.reset_index(drop=True),
+                ho_constant.reset_index(drop=True),
+                check_names=False,
+                obj="Holdout macro_trend must be identical regardless of "
+                    "apply_holdout_ema_to_full flag",
+            )

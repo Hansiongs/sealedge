@@ -351,6 +351,59 @@ class TestPortfolioSpaEndToEnd:
         assert np.isnan(eq)
         assert np.isnan(p)
 
+    def test_spa_all_iters_produce_zero_equity_returns_p_one(self, caplog):
+        """Phase 4.1 (v0.4.1): when n_iters > 0 but ALL iterations produce
+        random_equities == initial_capital (no trades generated), the
+        all-fail guard must return p_value=1.0 with a warning. Pre-fix,
+        this would give p=1/(N+1) which misleadingly suggests
+        significance.
+
+        Tests the gap between n_iters=0 (test_spa_zero_iters, which
+        produces empty null array) and n_iters>0 with all iterations
+        successfully running but producing no trades (the all-fail
+        scenario).
+        """
+        import logging
+        asset_data, daily_close, daily_hl = _make_spa_data()
+        trades = _make_spa_trades(n=3)
+
+        # simulate_full_portfolio returns (final_equity, daily_equity,
+        # executed_trades, reject_reasons). For the all-fail scenario,
+        # we return initial_capital as final_equity with empty trades.
+        from unittest.mock import patch
+        from quant_lib.core import _spa as spa_module
+
+        def empty_simulate(*args, **kwargs):
+            # Tuple form: (final_equity, daily_equity, executed_trades, reject_reasons)
+            return (1000.0, {}, [], {"cb_cooldown": 0})
+
+        with patch.object(spa_module, "simulate_full_portfolio", empty_simulate):
+            with caplog.at_level(logging.WARNING):
+                eq, null, p = portfolio_spa(
+                    observed_trades=trades,
+                    asset_data=asset_data,
+                    daily_close_matrix=daily_close,
+                    end_date="2024-02-01",
+                    n_iters=5,
+                )
+
+        # Phase 4.1: all-fail guard returns p_value=1.0
+        assert p == 1.0, (
+            f"SPA all-fail guard must return p_value=1.0 when all "
+            f"n_iters produce empty equity, got {p}. Pre-fix would "
+            f"return 1/(N+1) = 0.167 which misleadingly suggests significance."
+        )
+        # random_equities are all initial_capital (1000.0)
+        assert np.all(null == 1000.0), (
+            f"All random_equities must be initial_capital (1000.0), "
+            f"got unique values: {np.unique(null)}"
+        )
+        # Warning must be logged
+        assert any(
+            "all" in m.lower() and "iter" in m.lower()
+            for m in caplog.messages
+        ), f"Warning must mention all iterations failing. Got: {caplog.messages}"
+
 
 # ─────────────────────────────────────────────────────────────────────
 # S4.2: simulate_trailing_stop_trade (used by SPA)

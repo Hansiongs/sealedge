@@ -7,6 +7,309 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (Polish: v0.5.1 — review-driven minor fixes)
+
+This release addresses 4 issues + 2 test coverage gaps identified in
+the post-Phase-4 systematic review. All changes are backward-compatible
+(zero behavior change for valid inputs).
+
+- **SPA risk_weight fallback consistency** (`quant_lib/core/_spa.py`):
+  replaced hardcoded `0.005` fallback with `DEFAULTS["default_risk_per_pair"]`
+  (= 0.01). Matches the convention from Phase 2 Bug #6 fix in
+  `simulate_full_portfolio`. No behavior change for normal flow (WFA
+  trades always have `risk_weight` set), but prevents inconsistency
+  if a non-standard caller creates trades without `risk_weight`.
+- **`simulate_trailing_stop_trade` zero-price guard**
+  (`quant_lib/core/_engine.py:629`): added `if entry_price > 0.0 else 0.0`
+  guard on `sl_pct_pct` calculation, matching the Phase 3 Bug #10
+  fix in `fast_trade_loop`. Theoretical (real prices always positive)
+  but restores symmetry between the two `@njit` engine functions.
+- **Notebook 03 FDR section** (`notebooks/03_interpreting_results.ipynb`):
+  converted FDR section from markdown-with-code-block to an actual
+  code cell (plus an additional `alpha=0.15` example for comparison).
+  Users can now run FDR interactively instead of copy-pasting.
+- **Removed redundant inner `import numpy`** (`quant_lib/core/_wfa.py`):
+  `_run_engine_on_data` had an inner `import numpy as np` that was
+  redundant with the module-level import. Negligible perf impact
+  (Python caches imports) but cleaner code.
+
+### Tests added (v0.5.1)
+
+- **SPA all-fail guard with `n_iters > 0`** (`tests/test_spa.py`):
+  new test `test_spa_all_iters_produce_zero_equity_returns_p_one`
+  covers the gap between `n_iters=0` (empty null array) and
+  `n_iters>0` where all iterations produce empty trades (the actual
+  all-fail scenario the Phase 3 guard handles). Mocks
+  `simulate_full_portfolio` to always return `initial_capital`,
+  then verifies `p_value == 1.0` and warning is logged.
+- **`load_env_file` edge case tests** (`tests/test_utils_config.py`):
+  4 new tests covering CRLF line endings, empty values (`KEY=`),
+  spaces around `=` (`KEY = value`), and Unicode values.
+  Total tests in file: 14 (up from 10).
+
+### Skipped (deferred to future)
+
+- Bug #29: standardize docstrings to NumPy style across all modules
+  (broad refactor, low priority).
+- Phase 3 high-risk refactors: `Trade` TypedDict, allocators dedup,
+  EngineArgs call-site refactor, entry-slip helper, MTM dedup.
+  See CHANGELOG v0.4.1 for the deferred list.
+
+## [0.5.0] - 2026-06-30
+
+### Changed (Phase 4: Documentation & infrastructure — v0.5.0)
+
+This release focuses on **infrastructure hardening** and **discoverability**
+rather than algorithmic changes. No behavior change for existing users.
+
+- **`utils/config.py` implemented** (`quant_lib/utils/config.py`): the
+  file was previously a stub (``"""Shared utilities."""``). Now exports:
+  - ``find_repo_root(start=None)``: locate project root via pyproject.toml.
+  - ``load_env_file(env_path=None)``: parse ``.env`` into a dict.
+  - ``get_hmac_secret_with_fallback()``: env var → .env fallback chain.
+
+  Re-exported from ``quant_lib.utils`` for convenience:
+  ``from quant_lib.utils import find_repo_root, load_env_file``.
+- **API reference pages in mkdocs** (`mkdocs.yml`, `docs/api/*.md`):
+  added 5 auto-generated API reference pages (`quant_lib`, `core`,
+  `research`, `audit`, `tools`). Users can now browse API signatures
+  and docstrings via the published docs site.
+- **3 starter notebooks** (`notebooks/01_quick_start.ipynb`,
+  `02_custom_experiment.ipynb`, `03_interpreting_results.ipynb`):
+  written as plain nbformat v4 JSON (no `nbformat` build dependency).
+  Each has a corresponding `.py` source file with helper functions for
+  regeneration. Includes `notebooks/README.md` with usage instructions.
+- **Module-level assert under `-O` fix** (`quant_lib/core/_config.py`):
+  replaced `assert STATIC["wfa_purge_days"] >= 30` with
+  `if/raise AssertionError` so the invariant check runs even under
+  `python -O` (where `assert` statements are stripped).
+- **Gap detection ffill ordering comment** (`quant_lib/core/_features.py`):
+  added inline comment explaining why ffill must precede null-out of
+  gap contamination (reverse order would silently re-fill the gap
+  window from pre-gap data). No code change.
+- **Mutation baseline workflow** (`mutation_baseline.txt`): expanded
+  documentation with Option A (GitHub Actions) and Option B (local)
+  capture procedures. Baseline NOT yet captured (requires first
+  CI run). Acceptance threshold documented (5pp drop max).
+
+### Skipped in v0.5.0 (deferred)
+
+- **Bug #29**: standardize docstrings to NumPy style across all modules
+  (broad refactor, low priority).
+- **Bug #31**: enforce mutation threshold in CI workflow (requires
+  captured baseline first; will be added in v0.5.x after first
+  weekly CI run completes).
+
+### Tests (v0.5.0)
+
+- **`tests/test_utils_config.py`** (NEW, 10 tests):
+  - `TestFindRepoRoot` (2 tests): finds project root, returns start when no pyproject.toml
+  - `TestLoadEnvFile` (5 tests): simple key=value, comments/blanks ignored, quote stripping, missing file, equals in value
+  - `TestGetHmacSecretWithFallback` (3 tests): raises when missing, env var priority, .env fallback
+
+## [0.4.1] - 2026-06-30
+
+### Changed (Phase 3: Refactor & edge cases — v0.4.1)
+
+This release is a **pure refactor** with **no behavior change** for
+valid inputs. Existing experiment results are unaffected. The focus is
+on adding defensive guards, clarifying misleading variable names, and
+providing optional parameters for previously hardcoded assumptions.
+
+- **Zero/negative price guards in `@njit` engine** (`core/_engine.py:223, 453, 470`):
+  added `if closes[i] > 0.0` / `if entry_price > 0.0` guards before
+  divisions that could produce `inf`/`NaN` in extreme price scenarios
+  (theoretical for illiquid pairs). Previously, zero/negative prices
+  would propagate NaN through cost calculations and corrupt trade PnL.
+  Defensive only — no behavior change for typical crypto pairs.
+- **SPA all-fail edge case** (`core/_spa.py:287`): detect when all
+  SPA iterations produce empty/zero equity (random_equities all equal
+  initial_capital) and return `p_value=1.0` (cannot reject null) instead
+  of the misleading `p_value=1/(N+1)` from the Phipson-Bell add-one
+  formula. Logs a warning pointing to upstream `simulate_trailing_stop_trade`.
+- **`run_trade_bootstrap` accepts `trade_dates`** (`core/_metrics.py:run_trade_bootstrap`):
+  new optional parameter `trade_dates: pd.DatetimeIndex | None`. When
+  provided, CAGR is annualized using the actual date span
+  `(trade_dates[-1] - trade_dates[0]).days` instead of treating
+  1 trade ≈ 1 day. The proxy over-inflates CAGR for sparse strategies
+  (e.g., 100 trades over 2 years → annualized as 100 days instead of
+  ~730 days). Length mismatch with `trade_r_vals` logs a warning and
+  falls back to proxy. **Migration:** none required (default preserves
+  prior behavior).
+- **`_coefficient_of_variation` helper extracted** (`core/_metrics.py`):
+  extracted inline CV calculation into a reusable helper function.
+  Returns 0.0 when |mean| < 1e-12 (avoids div-by-zero). Used in
+  `print_param_stability` (Phase 3 cleanup; remaining 2 inline sites
+  will be migrated in a follow-up).
+- **Rename `max_idx` → `exit_limit_idx`** (`core/_engine.py:simulate_trailing_stop_trade`):
+  the local variable `max_idx` was misleading (sounds like "maximum
+  seen index", but is actually the upper bound of the bailout window).
+  Renamed to make intent explicit. No behavior change.
+- **`_shared_corr_cache` docstring** (`core/_spa.py:portfolio_spa`):
+  documented sharing constraints (safe within SPA iterations, unsafe
+  across independent backtests). No code change.
+- **`_rescale_factors_to_total` docstring** (`core/_risk_allocation.py`):
+  expanded notes section explaining the silent failure mode (when all
+  PF factors are zero, the fold gets risk_weight=0 and is effectively
+  skipped). No behavior change — the function still returns `{}` in
+  that case (verified by `tests/test_risk_allocation.py`).
+
+### Skipped in v0.4.1 (deferred to v0.5.0)
+
+These refactors were planned but **deferred** because they require
+extensive call-site refactors with non-trivial regression risk:
+
+- **Bug #11**: 33-arg positional call to `fast_trade_loop` → `EngineArgs.as_tuple()`
+  (the helper exists; call sites in `_wfa.py` still use positional).
+- **Bug #13**: Extract `_apply_pf_weighted_allocation_core` from
+  `_risk_allocation.py` (90% OOS/IS duplication).
+- **Bug #14**: Extract `_process_liquidations_and_mtm` helper from
+  `_portfolio.py` (30-line MTM duplication).
+- **Bug #15**: Extract `_compute_entry_slip` `@njit` helper from
+  `_engine.py` (4× entry-slip duplication).
+- **Bug #18**: `Trade` TypedDict migration (large refactor across 7+ files).
+- **Bug #24**: Logger name `"rich"` → `__name__` (would break 4 test
+  files that mock the logger by name; needs coordinated update).
+
+These are non-urgent and should be done in a dedicated refactor sprint.
+
+### Tests (v0.4.1)
+
+- **`tests/test_metrics.py`** — Added 7 new tests:
+  - `TestTradeBootstrapTradeDates` (3 tests): trade_dates accepted,
+    length mismatch logs warning.
+  - `TestCoefficientOfVariation` (4 tests): normal values, zero mean,
+    negative mean, constant values.
+
+## [0.4.0] - 2026-06-30
+
+### Changed (Phase 2.4: Correctness & dead-code cleanup — v0.4.0)
+
+- **`label_p_value` strict context validation** (`core/_testing.py`):
+  unknown context strings (typos, new contexts) now raise ``ValueError``
+  instead of silently falling back to "mean_r" with a warning. The
+  silent fallback could mask typos like "spa_p" or "sharpe" and produce
+  mislabeled reports. Valid contexts: ``{"mean_r", "spa"}``. Updated
+  docstring lists common typos and their corrections. **Migration:**
+  callers passing other context strings must update to a valid one.
+- **`prob_sharpe_ratio` uses sample std (ddof=1)** (`core/_testing.py`):
+  unweighted SR now uses ``np.std(returns, ddof=1)`` (sample std) for
+  consistency with the variance correction denominator ``n - 1``
+  downstream. Prior version used ``np.std(returns)`` (population std,
+  ddof=0) which under-reported SR by ~5% for small n (~10-30) and was
+  inconsistent with the docstring claim. Weighted path already used
+  weighted variance. **Migration:** SR values will shift slightly
+  (~2-5% for n < 30, <1% for n > 100). Existing reports can be
+  re-generated without re-running experiments.
+- **`_portfolio.py` risk_weight fallback uses config** (`core/_portfolio.py`):
+  when a trade has no ``risk_weight`` field and ``asset_risk_weights``
+  doesn't have the symbol, the fallback now uses
+  ``DEFAULTS["default_risk_per_pair"]`` (= 0.01) instead of the
+  hardcoded 0.005. This brings the portfolio simulator into
+  consistency with the WFA path which already used the config key.
+  **Migration:** default-risk trades (no risk_weight, no symbol in
+  asset_risk_weights) now risk 1.0% per trade instead of 0.5%. Strategies
+  that were on the margin of acceptance/rejection may need re-validation.
+- **`Candidate` declares `_is_trades_per_fold_by_sym` as a field**
+  (`research/candidate.py`): the attribute is now a dataclass field
+  initialized in ``__init__`` rather than lazy-initialized via
+  ``hasattr``. No behavior change, but eliminates a subtle bug class
+  (e.g., ``.pyc`` cache mismatches, IDE autocomplete failures, hot-path
+  ``hasattr`` overhead). Verified by
+  ``tests/test_candidate.py::TestCandidateInit::test_init_declares_is_trades_field``.
+- **`WalkForwardObjective` rejects empty input** (`core/_wfa.py`):
+  ``__init__`` raises ``ValueError`` immediately if ``df_prepped`` is
+  empty. Previously an empty input produced silently-corrupt
+  ``bar_weights`` (NaN from ``empty_array.mean()``) and only failed
+  downstream at ``__call__``. The fail-fast surfaces the real bug
+  (empty upstream data) at the source. **Migration:** callers passing
+  empty DataFrames must filter or guard upstream.
+- **`prepare_data_with_max_time` gains explicit `apply_holdout_ema_to_full`**
+  (`core/_features.py`): when ``btc_holdout_start`` is provided, this
+  flag controls whether the holdout-constant EMA is applied to the
+  entire df (default ``True``, pre-v0.4.0 behavior) or only to bars
+  ``>= btc_holdout_start`` (IS bars keep the dynamic EMA, matching the
+  WFA path). The new ``False`` mode is opt-in for users who want the IS
+  signal to match the WFA training path exactly. **Migration:** none
+  required (default preserves prior behavior).
+
+### Tests (v0.4.0)
+
+- **`tests/test_statistics.py`** — Replaced
+  ``test_unknown_context_falls_back_to_mean_r`` with
+  ``test_unknown_context_raises_value_error`` and added
+  ``test_valid_contexts_accepted``.
+- **`tests/test_psr_ess.py`** — Added
+  ``test_sr_uses_sample_std_ddof1`` (small n) and
+  ``test_sr_ddof_consistency_large_n``.
+- **`tests/test_features.py`** — Added ``TestApplyHoldoutEMAToFull``
+  with 3 tests (default-true, explicit-true matches default,
+  explicit-false restores dynamic EMA in IS).
+- **`tests/test_wfa.py`** — Added ``TestWalkForwardObjectiveEmptyInput``
+  with 2 tests (empty DataFrame raises, non-empty succeeds).
+- **`tests/test_candidate.py`** — Added
+  ``test_init_declares_is_trades_field`` to verify the dataclass
+  field exists.
+- **`tests/test_portfolio.py`** — Added
+  ``TestRiskWeightFallbackConsistency`` with 2 source-level guards
+  (no hardcoded 0.005, DEFAULTS key is used).
+
+### Fixed (v0.3.1 hotfix — Critical statistical bugs)
+
+- **PSR kurtosis formula error** (`core/_testing.py:159`,
+  `core/_wfa.py:199`): the Bailey & López de Prado (2012) variance
+  correction was using `(excess_kurt - 1) / 4` treating scipy's excess
+  kurtosis as if it were regular kurtosis. This understated the variance
+  by 3/4 · SR² and systematically **inflated PSR**, especially for
+  fat-tailed strategies where excess kurtosis > 0. For normal data
+  with SR=2 the formula gave var_correction = 0 (clipped to 1e-8)
+  where the correct value is 1.5. Now uses `(excess_kurt + 2) / 4`
+  (= `(regular_kurt - 1) / 4` with `regular = excess + 3`), matching
+  `deflated_sharpe_ratio` which already used the correct conversion.
+  **Impact:** all prior PSR values and strategy selection results
+  derived from this formula should be re-validated.
+
+- **`run_bootstrap` DD_Pctile sign convention** (`core/_metrics.py`):
+  added `assert max_dd <= 0` to enforce the negative-percentage
+  convention (e.g. `-20.0` for -20% drawdown). Previously, callers
+  passing positive `max_dd` produced `DD_Pctile = 100%` always because
+  the percentile comparison used mixed signs (bootstrap values are
+  negative, observed was being treated as positive). Added explicit
+  convention docstring with reference to `research/commit.py:500` and
+  `research/reporting.py:170` (callers that compute it correctly).
+  Existing callers already pass negative values; the assertion catches
+  future callers that would silently produce meaningless percentiles.
+
+- **Duplicate fold log message** (`core/_wfa.py:716-729`): the "no
+  trades" branch had two identical `console.print` calls back-to-back
+  (copy-paste artifact). Each fold with zero OOS trades was logged
+  twice. Removed the duplicate.
+
+### Tests (v0.3.1)
+
+- **`tests/test_psr_ess.py`** — Updated `test_weighted_psr_matches_wfa_formula`
+  and `test_kurtosis_uses_excess_convention` to reflect the corrected
+  formula. Added `test_psr_uses_correct_kurtosis_coefficient` which
+  verifies the implementation produces PSR matching the analytical
+  corrected formula (and differs from the old buggy formula by more
+  than 1e-3) for fat-tailed data with measurable excess kurtosis.
+- **`tests/test_wfa.py`** — Added `test_no_trade_fold_prints_exactly_once`
+  (regression guard against Bug #3) and `TestWFA_PSRFormulaConsistency`
+  with `test_wfa_objective_uses_corrected_kurtosis_formula` (source-level
+  guard against re-introducing the (kurt - 1)/4 form).
+- **`tests/test_metrics.py`** — Added `TestRunBootstrapConvention` with
+  3 tests enforcing the negative-percentage convention and verifying
+  DD_Pctile is no longer always 100% for observed negative drift.
+
+### Migration notes (v0.3.1)
+
+- The PSR correction will **reduce PSR for fat-tailed strategies**
+  with positive excess kurtosis (typical for crypto). Strategies
+  previously classified as TRADE/WATCH may drop to RESEARCH/NO EDGE.
+  Run `quant_exp status <experiment>` to re-check tier.
+- Bootstrap DD_Pctile values may shift significantly if you re-run
+  bootstrap on existing experiment results (previously always 100%).
+
 ### Changed (Phase 4: DX & Polish — Trade bootstrap, regime stats, CLI flags)
 
 - **Per-trade bootstrap** (`core/_metrics.py`): new

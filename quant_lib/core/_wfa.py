@@ -72,6 +72,17 @@ class WalkForwardObjective:
         self.random_draws: ndarray = rng.random(size=len(self.df_p) * 2).astype(np.float64)
 
         n_bars = len(df_prepped)
+        # Phase 2.4 (v0.4.0): fail-fast on empty input. Previously the
+        # ``self.bar_weights /= self.bar_weights.mean()`` line silently
+        # produced an empty array (mean of empty is NaN; numpy propagates
+        # the NaN into the division but does not raise). The downstream
+        # ``__call__`` guard at len < 168 eventually returned -9999, but
+        # the bar_weights state was corrupt and obscured the real bug.
+        if n_bars == 0:
+            raise ValueError(
+                "WalkForwardObjective requires a non-empty df_prepped "
+                f"(got {n_bars} bars). Check the upstream data pipeline."
+            )
         if decay_halflife_months > 0:
             halflife_bars = decay_halflife_months * 30 * 24
             bar_ages = np.arange(n_bars - 1, -1, -1, dtype=np.float64)
@@ -185,9 +196,10 @@ class WalkForwardObjective:
         # ── PSR objective (replaces traditional SR) ──
         # PSR accounts for skewness and kurtosis, more valid for crypto
         # returns which are fat-tailed and asymmetric.
-        # NOTE: kurt uses fisher=True (excess kurtosis) to match Bailey
-        # & Lopez de Prado (2012) formula. prob_sharpe_ratio in
-        # core/_testing.py uses the same convention.
+        # NOTE: Bailey's formula uses REGULAR kurtosis (γ₄ = excess + 3),
+        # so the coefficient is (γ₄ - 1)/4 = (excess + 2)/4. prob_sharpe_ratio
+        # in core/_testing.py uses the same conversion. See CHANGELOG v0.3.1
+        # for the prior bug where (excess - 1)/4 was used.
         # For WFA optimization we use a NEUTRAL fallback (psr=0.5) when
         # the variance correction is non-positive OR when the effective
         # sample size is too small (ESS < 2). Both conditions make the
@@ -196,7 +208,7 @@ class WalkForwardObjective:
         if n_trades >= 10:
             skew = float(scipy_stats.skew(pnl_array))
             kurt = float(scipy_stats.kurtosis(pnl_array, fisher=True))
-            var_corr = 1.0 - skew * w_sr + ((kurt - 1.0) / 4.0) * w_sr ** 2
+            var_corr = 1.0 - skew * w_sr + ((kurt + 2.0) / 4.0) * w_sr ** 2
             if var_corr <= 0.0 or ess < 2.0:
                 # Bailey formula outside valid range -- neutral fallback
                 # (prob_sharpe_ratio in core/_testing.py uses a different
@@ -292,8 +304,20 @@ def _run_engine_on_data(
     selector and SPA test). The structure of returned trade dicts
     matches the OOS trades: same keys, fold_key identifies the
     fold. Caller decides which subset of fields to use.
+
+    Seed rationale (``fold_seed ^ 0xBEEF``):
+        The base fold_seed is shared by three independent random
+        streams (see ``run_wfa_per_symbol``):
+            - ``fold_seed ^ 0xDEF``  → Optuna warm-start perturbation
+            - ``fold_seed ^ 0xABCD`` → OOS random draws (cost noise)
+            - ``fold_seed ^ 0xBEEF`` → IS random draws (cost noise)
+        XOR masks are arbitrary constant bit-flips that produce
+        statistically independent streams from the same base seed.
+        All three streams are deterministic given ``fold_seed``,
+        making the entire WFA pipeline reproducible across runs
+        and machines. The three masks are non-overlapping high/
+        mid/low bit patterns to avoid correlated sequences.
     """
-    import numpy as np
     rng_is = np.random.default_rng(fold_seed ^ 0xBEEF)
     random_draws_is = rng_is.random(size=len(df) * 2).astype(np.float64)
     rsi_14_is = df["rsi_14"].values if "rsi_14" in df.columns else np.zeros(len(df), dtype=np.float64)
@@ -700,13 +724,6 @@ def run_wfa_per_symbol(
                     f"{np.sum(pnl_oos):+.2f} R ({len(pnl_oos)} Trds)"
                 )
         elif verbose:
-            console.print(
-                f"[bold green]✓ {symbol} fold {fold_num}/{total_folds}[/] "
-                f"WFA | IS:{is_months[0].start_time.strftime('%b %y')}"
-                f"-{is_months[-1].end_time.strftime('%b %y')} "
-                f"OOS:{oos_months[0].start_time.strftime('%b %y')}"
-                f"-{oos_months[-1].end_time.strftime('%b %y')} | no trades"
-            )
             console.print(
                 f"[bold green]✓ {symbol} fold {fold_num}/{total_folds}[/] "
                 f"WFA | IS:{is_months[0].start_time.strftime('%b %y')}"

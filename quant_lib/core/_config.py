@@ -57,10 +57,14 @@ STATIC: dict[str, Any] = {
 # because contamination from boundary artifacts naturally dilutes.
 # wfa_purge_days = 90 is MAXIMUM (IS ≤ 15 months), minimum 30 days to
 # cover vol_pct_rank rolling window (720 bar 1H).
-assert STATIC["wfa_purge_days"] >= 30, (
-    f"wfa_purge_days ({STATIC['wfa_purge_days']}) must be >= 30 "
-    f"(minimum for vol_pct_rank rolling window: 720 bar = 30d max lookback)."
-)
+# Phase 4 (v0.5.0): replaced `assert` with `if/raise AssertionError`
+# so the invariant check runs even under `python -O` (where `assert`
+# statements are stripped).
+if STATIC["wfa_purge_days"] < 30:
+    raise AssertionError(
+        f"wfa_purge_days ({STATIC['wfa_purge_days']}) must be >= 30 "
+        f"(minimum for vol_pct_rank rolling window: 720 bar = 30d max lookback)."
+    )
 
 # ════════════════════════════════════════════════════════════════════════
 # DEFAULTS -- Per-experiment defaults (mirror StrategyConfig)

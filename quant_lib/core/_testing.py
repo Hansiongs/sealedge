@@ -30,8 +30,18 @@ def prob_sharpe_ratio(
         PSR = Phi((SR - SR*) / sqrt(Var_correction / (n_eff - 1)))
         Var_correction = 1 - gamma_3 * SR + ((gamma_4 - 1) / 4) * SR^2
 
-    where gamma_3 = skewness and gamma_4 = EXCESS kurtosis (0 for normal).
-    See quant_lib.core._testing._PSR_FORMULA_NOTES for derivation notes.
+    where:
+        gamma_3 = sample skewness (Fisher convention, 0 for normal)
+        gamma_4 = REGULAR kurtosis (Fisher convention, 3 for normal)
+                  = excess_kurtosis + 3
+
+    Internally we compute excess kurtosis via scipy (Fisher=True, 0 for
+    normal) and convert: (gamma_4 - 1) / 4 = (excess + 3 - 1) / 4
+    = (excess + 2) / 4.
+
+    Note: an earlier revision used (excess - 1) / 4 (treating excess as
+    if it were regular kurtosis), which understated the variance by
+    3/4 * SR^2 and inflated PSR. See CHANGELOG v0.3.1.
 
     Parameters
     ----------
@@ -61,13 +71,18 @@ def prob_sharpe_ratio(
     # ── Step 1: Compute SR (weighted if trade_weights provided) ──
     if trade_weights is None:
         # Unweighted path
-        if n < 10 or np.std(returns) == 0:
+        # Phase 2.4 (v0.4.0): use SAMPLE std (ddof=1) for consistency with
+        # the variance correction denominator ``n - 1`` used downstream.
+        # Using population std (ddof=0, the np default) was inconsistent
+        # with the docstring claim and biased SR ~5% low for small n.
+        sample_std = float(np.std(returns, ddof=1))
+        if n < 10 or sample_std == 0:
             log.warning(
                 f"PSR: insufficient data ({n} returns, "
-                f"std={np.std(returns):.4f}). Returning SR=NaN, PSR=NaN."
+                f"std={sample_std:.4f}). Returning SR=NaN, PSR=NaN."
             )
             return float("nan"), float("nan")
-        sr = float(np.mean(returns) / np.std(returns))
+        sr = float(np.mean(returns) / sample_std)
         # Sanity guard: extreme SR (e.g. >1e6) usually means near-constant
         # input that bypassed the std==0 check via float precision. Such
         # inputs produce meaningless PSR values, so return NaN.
@@ -133,10 +148,11 @@ def prob_sharpe_ratio(
         denom = ess - 1.0
 
     # ── Step 2: Compute higher moments (excess kurtosis = Bailey convention) ──
-    # NOTE: kurt uses fisher=True (excess kurtosis, 0 for normal). This
-    # matches Bailey & Lopez de Prado (2012) formula. Prior versions used
-    # fisher=False (regular kurtosis, 3 for normal) which overestimated
-    # variance by +3/4 * SR^2 / denom, understating PSR.
+    # kurt uses fisher=True (excess kurtosis, 0 for normal). The Bailey
+    # variance correction formula uses REGULAR kurtosis (γ_4 = excess + 3),
+    # so we apply (γ_4 - 1) / 4 = (excess + 2) / 4 below. See CHANGELOG v0.3.1
+    # for the prior bug where (excess - 1) / 4 was used (underestimated
+    # variance by 3/4 * SR^2 / denom, inflating PSR).
     skew = float(stats.skew(returns))
     kurt = float(stats.kurtosis(returns, fisher=True))  # excess kurtosis
 
@@ -148,15 +164,14 @@ def prob_sharpe_ratio(
 
     # ── Step 4: Compute Bailey's PSR variance correction ──
     # Bailey's formula is an asymptotic expansion valid for moderate SR.
-    # For very high SR with near-normal data, the correction term
-    # (kurt-1)/4 * SR^2 can make the variance correction negative
-    # (e.g., normal data with SR > 2: correction = 1 - SR^2/4 < 0).
-    # In that regime, the formula is outside its valid range. We clip
+    # The kurtosis term (excess + 2) / 4 * SR^2 can make the variance
+    # correction negative at very high SR with near-normal data (e.g.,
+    # normal data with SR > sqrt(2): correction = 1 - SR^2 / 2 < 0).
+    # In that regime the formula is outside its valid range. We clip
     # the variance correction to a small positive value rather than
     # returning NaN, so callers get a usable PSR. The PSR will be very
-    # high (close to 1) reflecting the high observed SR -- the same
-    # intuitive result the original (incorrectly-robust) formula gave.
-    variance_correction = 1 - skew * sr + ((kurt - 1) / 4) * sr**2
+    # high (close to 1) reflecting the high observed SR.
+    variance_correction = 1 - skew * sr + ((kurt + 2) / 4) * sr**2
     if variance_correction <= 0:
         log.warning(
             f"PSR variance correction <= 0 (skew={skew:.2f}, kurt={kurt:.2f}, "
@@ -286,14 +301,22 @@ def deflated_sharpe_ratio(
     "The Deflated Sharpe Ratio: Correcting for Selection Bias,
     Backtest Overfitting, and Non-Normality" (JPM 40(5), 94-107).
 
-    Key formulas:
-        E[max(SR)] = (1 - γ_3 * SR* + ((κ_4 - 1)/4) * SR*^2) *
-                     Φ⁻¹(1 - 1/N) +
-                     sqrt(V[max SR]) * Φ⁻¹(1 - 1/N) + γ_3 * SR*
+    Key formulas (paper Eqs 2.2 and 3.1):
 
-    where γ_3 = skewness, κ_4 = excess kurtosis, SR* = benchmark_sharpe.
+        V[s_hat] = 1 - γ_3·s* + ((γ_4 - 1) / 4) · s*²
+        E[max_s_n] / sqrt(V) ≈
+            (1 - γ_3·s* + ((γ_4 - 1) / 4) · s*²) · z_α + γ_3·s*
 
-    Then PSR_deflated = Φ((SR_obs - E[max SR]) / sqrt(V[max SR]))
+    where:
+        γ_3 = sample skewness
+        γ_4 = regular kurtosis (Fisher convention, 3 for normal)
+              = excess kurtosis + 3
+        s*  = benchmark Sharpe
+        z_α = Φ⁻¹(1 - 1/N), asymptotic expected max of N std normals
+        N   = n_trials (family size)
+
+    Then:
+        PSR_deflated = Φ((s_obs - E[max_s_n]) / sqrt(V[s_hat]))
 
     The PSR_deflated should be > 0.95 for a strategy to be considered
     "real edge, not just best of N" (Bailey & López de Prado threshold).
@@ -314,22 +337,20 @@ def deflated_sharpe_ratio(
         return 0.0
 
     # Variance of the SR estimator under the null (with skewness and
-    # excess kurtosis corrections per Bailey & López de Prado 2014).
-    # This is the asymptotic variance of a single SR estimate.
+    # excess kurtosis corrections per Bailey & López de Prado 2014 Eq 2.2).
+    # This is the asymptotic variance of a single SR estimate, normalized:
+    #     V[s_hat] = 1 - γ₃·s* + ((γ₄ - 1) / 4) · s*²
+    # where γ₄ = regular kurtosis (Fisher convention, 3 for normal).
+    # In excess kurtosis terms: γ₄ = excess + 3, so (γ₄ - 1)/4 = (excess + 2)/4.
     if n_obs_per_trial is None or n_obs_per_trial < 2:
         # Asymptotic: V[SR] = 1 under the null
         sr_variance = 1.0
     else:
-        # Finite-sample: V[SR] = (1 + 0.5*SR^2 - γ_3*SR + ((κ_4)/6)*SR^2) / (n-1)
-        # Note: Bailey & López de Prado use REGULAR kurtosis in the
-        # variance formula (κ_4 = 3 for normal), not excess. The caller
-        # passes excess; we add 3 to get regular.
-        regular_kurtosis = returns_excess_kurtosis + 3.0
+        regular_kurtosis = returns_excess_kurtosis + 3.0  # γ₄ = excess + 3
         sr_variance = (
             1.0
             - returns_skewness * benchmark_sharpe
-            + 0.5 * benchmark_sharpe**2
-            + ((regular_kurtosis - 3.0) / 6.0) * benchmark_sharpe**2
+            + ((regular_kurtosis - 1.0) / 4.0) * benchmark_sharpe**2
         ) / max(n_obs_per_trial - 1, 1)
         # Guard against negative variance from numerical issues
         sr_variance = max(sr_variance, 1e-12)
@@ -338,13 +359,16 @@ def deflated_sharpe_ratio(
     sr_std = np.sqrt(sr_variance)
 
     # Expected maximum of N i.i.d. normal(0, sr_std) variables,
-    # adjusted for skewness and kurtosis per Bailey & López de Prado.
-    # Φ⁻¹(1 - 1/N) is the asymptotic expected max of N standard normals
+    # adjusted for skewness and kurtosis per Bailey & López de Prado 2014
+    # Eq 3.1 (normalized by sqrt(V)):
+    #     E[max_s_n] / sqrt(V) ≈ (1 - γ₃·s* + ((γ₄ - 1) / 4) · s*²) · z_α + γ₃·s*
+    # where z_α = Φ⁻¹(1 - 1/N).
     z_threshold = stats.norm.ppf(1.0 - 1.0 / n_trials)
 
     # Bias correction: skewness shifts the expected max
     skew_bias = returns_skewness * benchmark_sharpe
-    kurt_bias = ((returns_excess_kurtosis - 1.0) / 4.0) * benchmark_sharpe**2
+    # Kurtosis bias uses (γ₄ - 1)/4 = (excess + 2)/4 in excess terms.
+    kurt_bias = ((returns_excess_kurtosis + 2.0) / 4.0) * benchmark_sharpe**2
 
     expected_max_sr = (
         (1.0 - skew_bias + kurt_bias) * z_threshold
@@ -391,6 +415,9 @@ _LABEL_TIERS: dict[str, list[tuple[float, str, str, str, str]]] = {
 }
 
 
+_VALID_LABEL_CONTEXTS: frozenset[str] = frozenset(_LABEL_TIERS.keys())
+
+
 def label_p_value(p: float | None, context: str = "mean_r") -> tuple[str, str, str]:
     """Crypto-adjusted p-value label, confidence, and brief interpretation.
 
@@ -400,15 +427,13 @@ def label_p_value(p: float | None, context: str = "mean_r") -> tuple[str, str, s
       SPA is a multi-symbol test that already accounts for multiple
       comparisons).
 
-    Unknown context strings fall back to "mean_r" tiers (with a
-    debug log) so the function is robust to typos.
-
     Parameters
     ----------
     p : float or None
         P-value to label. NaN/None returns UNRELIABLE.
     context : str
         "mean_r" for per-symbol (5-tier) or "spa" for Portfolio SPA.
+        Raises ``ValueError`` for any other context.
 
     Returns
     -------
@@ -418,7 +443,24 @@ def label_p_value(p: float | None, context: str = "mean_r") -> tuple[str, str, s
         Confidence range.
     interpretation : str
         Brief interpretation.
+
+    Raises
+    ------
+    ValueError
+        If ``context`` is not in {"mean_r", "spa"}. Phase 2.4 (v0.4.0):
+        unknown contexts used to fall back silently to "mean_r" with a
+        warning, which masked typos like "spa_p" or "sharpe". The
+        strict raise prevents accidentally using the wrong threshold
+        tier in reports.
     """
+    if context not in _VALID_LABEL_CONTEXTS:
+        valid = sorted(_VALID_LABEL_CONTEXTS)
+        raise ValueError(
+            f"label_p_value: unknown context {context!r}. "
+            f"Valid contexts: {valid}. "
+            f"Common typos: 'spa_pvalue' -> 'spa', 'psr' -> 'mean_r'."
+        )
+
     if p is None or (isinstance(p, float) and np.isnan(p)):
         return (
             "[bold grey]UNRELIABLE[/]",
@@ -426,14 +468,7 @@ def label_p_value(p: float | None, context: str = "mean_r") -> tuple[str, str, s
             f"p-value is NaN ({context} context)",
         )
 
-    tiers = _LABEL_TIERS.get(context)
-    if tiers is None:
-        # Unknown context: log once and fall back to mean_r (defensive).
-        log.warning(
-            f"label_p_value: unknown context '{context}', "
-            f"falling back to 'mean_r' tiers."
-        )
-        tiers = _LABEL_TIERS["mean_r"]
+    tiers = _LABEL_TIERS[context]
 
     for upper, label_name, style, conf, interp in tiers:
         if p < upper:
