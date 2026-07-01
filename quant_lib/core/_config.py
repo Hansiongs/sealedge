@@ -85,6 +85,18 @@ class StaticConfig(TypedDict):
     spa_equity_warn_threshold_usd: float
     # WFA purge (MAXIMUM; adaptive via _get_purge_days)
     wfa_purge_days: int
+    # WFA contiguity: IS/OOS folds with internal gaps larger than this
+    # are skipped (covers a weekend + emergency maintenance buffer).
+    # Phase 4 (v0.5.x): extracted from magic number 48h in core/_wfa.py.
+    max_allowed_gap_hours: int
+    # Correlation sizing: rolling correlation window for portfolio
+    # correlation-aware position sizing. 180 days = 6 months of daily
+    # returns, captures crypto market regime cycles. Below
+    # ``correlation_min_lookback_days`` the matrix is not computed
+    # (insufficient sample). Phase 4 (v0.5.x): extracted from magic
+    # numbers in core/_portfolio.py.
+    correlation_lookback_days: int
+    correlation_min_lookback_days: int
 
 
 class DefaultsConfig(TypedDict):
@@ -162,6 +174,18 @@ STATIC: StaticConfig = {
     # converged after 90-day purge (~87% real-data weight). macro_trend
     # is binary (1/-1) and tolerates residual contamination well.
     "wfa_purge_days": 90,                   # MAXIMUM; adaptive via _get_purge_days
+    # WFA contiguity: 48h = weekend (Sat+Sun ≈ 48h) + 0h maintenance
+    # buffer. Folds with internal gaps > 48h are skipped to prevent
+    # training on fragmented data. Phase 4 (v0.5.x): extracted from
+    # hardcoded ``pd.Timedelta(hours=48)`` in core/_wfa.py.
+    "max_allowed_gap_hours": 48,
+    # Correlation-aware position sizing: 180-day rolling correlation
+    # window. Below 30 days the matrix is too noisy to be useful, so
+    # the sizing pass is skipped. Phase 4 (v0.5.x): extracted from
+    # hardcoded constants in core/_portfolio.py (CORR_LOOKBACK = 180
+    # and the 30-bar fallback in the same module).
+    "correlation_lookback_days": 180,
+    "correlation_min_lookback_days": 30,
 }
 
 # NOTE: purge days are now ADAPTIVE via _get_purge_days() -- shrinks as IS grows

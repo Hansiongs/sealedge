@@ -502,11 +502,12 @@ def run_wfa_per_symbol(
         if len(df_oos) > 1:
             oos_diffs = df_oos["time"].diff().dropna()
             oos_max_gap = oos_diffs.max()
-            if oos_max_gap > pd.Timedelta(hours=48):
+            if oos_max_gap > pd.Timedelta(hours=STATIC["max_allowed_gap_hours"]):
                 if verbose:
                     console.print(
                         f"  [yellow]fold {fold_num}/{total_folds}: "
-                        f"skip (OOS gap = {oos_max_gap.total_seconds()/3600:.0f}h > 48h)[/]"
+                        f"skip (OOS gap = {oos_max_gap.total_seconds()/3600:.0f}h "
+                        f"> {STATIC['max_allowed_gap_hours']}h)[/]"
                     )
                 continue
 
@@ -514,11 +515,12 @@ def run_wfa_per_symbol(
         if len(df_is) > 1:
             is_diffs = df_is["time"].diff().dropna()
             is_max_gap = is_diffs.max()
-            if is_max_gap > pd.Timedelta(hours=48):
+            if is_max_gap > pd.Timedelta(hours=STATIC["max_allowed_gap_hours"]):
                 if verbose:
                     console.print(
                         f"  [yellow]fold {fold_num}/{total_folds}: "
-                        f"skip (IS gap = {is_max_gap.total_seconds()/3600:.0f}h > 48h)[/]"
+                        f"skip (IS gap = {is_max_gap.total_seconds()/3600:.0f}h "
+                        f"> {STATIC['max_allowed_gap_hours']}h)[/]"
                     )
                 continue
 

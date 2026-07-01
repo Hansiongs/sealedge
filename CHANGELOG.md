@@ -298,13 +298,53 @@ the new `reject_reasons["invalid_sl_pct"]` counter instead.
   confirming one bad trade no longer kills the backtest. Total
   tests in file: 7 (up from 3).
 
+### Changed (Sprint 4 — magic numbers to STATIC + comment hygiene)
+
+Three small low-risk fixes from the post-Phase-4 cleanup pass. No
+behavior change; no API change; no new tests required (existing
+test suite exercises the affected paths).
+
+- **`STATIC["max_allowed_gap_hours"] = 48`**
+  (`quant_lib/core/_config.py`, `quant_lib/core/_wfa.py`): the
+  IS/OOS contiguity threshold was hardcoded as
+  ``pd.Timedelta(hours=48)`` in two places in `core/_wfa.py`.
+  Promoted to STATIC (single source of truth, configurable per
+  experiment in future). Backward compatible: default value is
+  unchanged.
+
+- **`STATIC["correlation_lookback_days"] = 180` and
+  `STATIC["correlation_min_lookback_days"] = 30`**
+  (`quant_lib/core/_config.py`, `quant_lib/core/_portfolio.py`):
+  the rolling correlation window (`CORR_LOOKBACK = 180`) and the
+  minimum-lookback fallback (`30`) used by correlation-aware
+  position sizing were hardcoded as module-level constants in
+  `core/_portfolio.py`. Promoted to STATIC with explanatory
+  comments (6-month daily window for crypto regime cycles; 30-day
+  floor below which the correlation matrix is too noisy).
+
+- **Market impact cap proxy note**
+  (`quant_lib/core/_portfolio.py:436-489`): rewrote the comment
+  block above the `market_impact_cap` calculation. The previous
+  comment described using `daily_close` as a "conservative proxy"
+  for 24h volume but did not quantify how conservative. The new
+  comment explicitly notes that the proxy yields a cap 4-5 orders
+  of magnitude tighter than a true-volume cap (BTC example:
+  $60k price vs $5B daily turnover). The proxy-vs-truth gap is
+  now visible to future readers, not silent. A proper
+  true-volume implementation is deferred to a future release --
+  would require plumbing per-bar OHLCV DataFrame into
+  `simulate_full_portfolio`.
+
 ### Test counts
 
 - v0.5.1 baseline: 1245 tests passing
 - v0.5.2 (Sprint 1): 1259 tests passing (+14 net new tests,
   +1 updated regression test, +0 regressions)
-- v0.5.3 (Sprint 2): **1283 tests passing** (+24 net new tests,
+- v0.5.3 (Sprint 2): 1283 tests passing (+24 net new tests,
   +0 regressions)
+- v0.5.4 (Sprint 3): 1307 collected / 1288 passing (no net new
+  tests in this sprint — refactor-only changes, all existing
+  tests still pass)
 
 ### Skipped (deferred to future)
 
@@ -313,6 +353,14 @@ the new `reject_reasons["invalid_sl_pct"]` counter instead.
 - Phase 3 high-risk refactors: `Trade` TypedDict, allocators dedup,
   EngineArgs call-site refactor, entry-slip helper, MTM dedup.
   See CHANGELOG v0.4.1 for the deferred list.
+- **True 24h volume for market impact cap**: current implementation
+  uses `daily_close` as a proxy for 24h USD volume, yielding a cap
+  4-5 orders of magnitude tighter than a true-volume cap (see
+  `core/_portfolio.py:436-489` PROXY NOTE). A proper implementation
+  would plumb per-bar OHLCV DataFrame into `simulate_full_portfolio`
+  and compute `Σ(volume × close)` over the trailing 24 bars. Touches
+  the portfolio sim signature — deferred to avoid breaking the
+  `simulate_full_portfolio` API until a wider refactor.
 
 ## [0.5.1] - 2026-07-01
 

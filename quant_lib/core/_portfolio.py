@@ -257,7 +257,10 @@ def simulate_full_portfolio(
             _sym_to_idx = {}
 
     _corr_cache = _shared_corr_cache if _shared_corr_cache is not None else {}
-    CORR_LOOKBACK = 180
+    # Phase 4 (v0.5.x): correlation window now sourced from STATIC
+    # (single source of truth, configurable per-experiment if needed).
+    CORR_LOOKBACK = STATIC["correlation_lookback_days"]
+    MIN_CORR_LOOKBACK = STATIC["correlation_min_lookback_days"]
 
     for event in events:
         curr_time = event["time"]
@@ -390,7 +393,7 @@ def simulate_full_portfolio(
                         if len(past_rets) >= CORR_LOOKBACK:
                             window = past_rets.iloc[-CORR_LOOKBACK:]
                             _corr_cache[day_key] = window.corr().values.astype(np.float64)
-                        elif len(past_rets) >= 30:
+                        elif len(past_rets) >= MIN_CORR_LOOKBACK:
                             _corr_cache[day_key] = past_rets.corr().values.astype(np.float64)
                         else:
                             _corr_cache[day_key] = None
@@ -434,22 +437,47 @@ def simulate_full_portfolio(
             initial_margin = notional / leverage
 
             # Phase 2.4: Market impact cap. Position notional is
-            # capped at DEFAULTS["market_impact_volume_pct"] of 24h
-            # volume. Prevents the trend multiplier (1.5x with-trend)
-            # from creating unrealistically large orders on illiquid
-            # assets where live fill price would move against the
-            # order. Uses daily close as a conservative proxy for
-            # 24h volume (true volume is typically higher, so this
-            # is a conservative cap). Only logs once per symbol per
-            # run to avoid spam.
+            # capped at DEFAULTS["market_impact_volume_pct"] of an
+            # estimate of 24h USD volume. Prevents the trend
+            # multiplier (1.5x with-trend) from creating unrealistically
+            # large orders on illiquid assets where live fill price
+            # would move against the order.
+            #
+            # PROXY NOTE (Phase 4 v0.5.x): we use ``daily_close`` as a
+            # proxy for 24h USD volume. True 24h volume would be
+            # ``Σ(volume × close)`` over the last 24 hourly bars.
+            # Because ``daily_close`` is much smaller than the true
+            # 24h USD volume (e.g. for BTC: $60k price vs $5B daily
+            # turnover at the time of writing), this proxy yields a
+            # cap that is roughly 4-5 orders of magnitude TIGHTER
+            # than a true-volume cap. The trade-off:
+            #
+            # - Pro: caps are very conservative -- positions are
+            #   effectively guaranteed to clear 1% of even the
+            #   lowest-liquidity pairs in the universe. Eliminates
+            #   slippage-driven PnL surprises for illiquid alts.
+            # - Con: for liquid pairs (BTC/ETH), the cap is so
+            #   restrictive that the trend multiplier rarely triggers
+            #   it, meaning the cap is effectively a no-op for the
+            #   pairs that matter most. Under-sizes positions in
+            #   high-volume markets.
+            #
+            # A true 24h-volume implementation would need access to
+            # the per-bar OHLCV DataFrame (currently the portfolio
+            # simulator only sees ``daily_close_matrix``). Deferred
+            # to a future release -- current behavior is documented
+            # here so the proxy-vs-truth gap is not silent.
+            # Only logs once per symbol per run to avoid spam.
             market_impact_pct = DEFAULTS.get("market_impact_volume_pct", 0.01)
             if market_impact_pct > 0 and daily_close_matrix:
                 daily_close_proxy = float(
                     daily_close_matrix.get(sym, {}).get(day_key, 0.0)
                 )
                 if daily_close_proxy > 0:
-                    # Target notional cap (in USD) = 24h volume proxy
-                    # × market_impact_pct × leverage
+                    # Target notional cap (in USD) ≈ 24h volume proxy
+                    # × market_impact_pct × leverage. NOTE: the proxy
+                    # is ``daily_close``, NOT true 24h USD volume --
+                    # see the PROXY NOTE block above for the trade-off.
                     market_impact_cap = (
                         daily_close_proxy
                         * market_impact_pct
