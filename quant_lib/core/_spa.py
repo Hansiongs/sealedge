@@ -299,8 +299,8 @@ def portfolio_spa(
     # anchored permutation of observed trades, which preserves cross-
     # asset co-occurrence structure. This correction is the standard
     # add-one for permutation tests (Phipson & Smyth 2010). The
-    # previous label "Davé 2008" was incorrect; the formula is the
-    # same but the attribution is to Phipson-Bell.
+    # incorrect "Davé 2008" label was removed; correct citation is
+    # Phipson & Smyth (2010) for add-one correction in permutation tests.
     # Phase 3 (v0.4.1): detect when ALL SPA iterations failed to
     # produce trades (random_equities all equal initial_capital). In
     # that case, n_exceed would be 0 → p_value = 1/(N+1) would

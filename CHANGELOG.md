@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (Phase 5 — code quality + test coverage)
+
+- **PSR docstring correction** (`quant_lib/core/_testing.py`):
+  the ``prob_sharpe_ratio`` docstring previously contained a note
+  referencing a pre-v0.3.1 bug ("Note: an earlier revision used
+  (excess - 1) / 4...") without clearly stating the bug was fixed.
+  Replaced with an explicit ``BUGFIX v0.3.1`` attribution that:
+  (1) names the bug, (2) cites the Bailey & López de Prado formula
+  as the correct reference, (3) quantifies the impact (~15% PSR
+  inflation for high-SR strategies), and (4) points to the changelog
+  entry. Documentation-only change; no runtime behavior modified.
+
+- **SPA citation correction** (`quant_lib/core/_spa.py`): the
+  p-value correction comment previously referenced "Davé 2008"
+  before correcting itself to Phipson-Bell (2010), leaving both
+  citations in the comment. Removed the incorrect "Davé 2008"
+  reference; the correct citation is now Phipson & Smyth (2010)
+  for the add-one correction in permutation tests. Documentation-
+  only change; no runtime behavior modified.
+
+- **WFA magic numbers extracted to DEFAULTS config**
+  (`quant_lib/core/_config.py`, `quant_lib/core/_wfa.py`): the
+  ``WalkForwardObjective`` class previously hardcoded 12 L2
+  regularization constants (6 centers + 6 scales) for optuna
+  parameter tuning. Extracted to ``DEFAULTS`` config as
+  ``vol_thresh_center``, ``pullback_bars_center``, ``trail_atr_center``,
+  ``sl_mult_center``, ``rsi_oversold_center``, ``rsi_overbought_center``
+  (centers) and ``*_scale`` variants. Added corresponding entries to
+  the ``DefaultsConfig`` TypedDict schema and to the
+  ``framework_only`` set in ``TestStrategyConfigStaysInSync`` (these
+  are framework-level tuning constants, not per-experiment overrides).
+  Runtime behavior identical; single source of truth for tuning params.
+
+- **New SPA validation test suite** (`tests/test_spa_validation.py`):
+  added 7 new tests covering: (1) property-based verification that
+  SPA permutations preserve cross-asset correlation structure
+  (hypothesis-driven, 20 examples), (2) edge case handling for empty
+  trades and all-iterations-fail scenarios, (3) config extraction
+  validation confirming WFA parameters come from DEFAULTS not hardcoded
+  values, and (4) regression guard that extracted values match the
+  original hardcoded values. Fills the gap identified in the post-
+  Phase-4 review: no prior test verified SPA's correlation-preservation
+  assumption directly.
+
 ### Changed (Sprint 3 — type safety + drift prevention)
 
 This release addresses 7 items from the post-Phase-4 systematic review

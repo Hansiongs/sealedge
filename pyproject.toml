@@ -79,6 +79,7 @@ python_functions = ["test_*"]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "network: marks tests that require network access (skipped when OFFLINE=1)",
+    "holdout_period_for_isolation: override the autouse _isolate_holdout_seal_files period for this test (pass a (start, end) tuple as the marker arg)",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning:pkg_resources",

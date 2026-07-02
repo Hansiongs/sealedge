@@ -165,6 +165,21 @@ class TestStrategyConfigStaysInSync:
             "default_expected_trades_per_year",
             "psr_weight_floor",
             "market_impact_volume_pct",
+            # WFA parameter centers/scales (L2 regularization constants
+            # extracted from hardcoded values in core/_wfa.py; these are
+            # framework-level tuning parameters, not per-experiment overrides)
+            "vol_thresh_center",
+            "pullback_bars_center",
+            "trail_atr_center",
+            "sl_mult_center",
+            "rsi_oversold_center",
+            "rsi_overbought_center",
+            "vol_thresh_scale",
+            "pullback_bars_scale",
+            "trail_atr_scale",
+            "sl_mult_scale",
+            "rsi_oversold_scale",
+            "rsi_overbought_scale",
         }
 
         keys_to_check = defaults_keys - dict_shape_keys - framework_only

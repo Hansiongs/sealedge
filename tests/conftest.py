@@ -103,17 +103,17 @@ DAILY_CLOSE_SEED: int = 42
 @pytest.fixture
 def sample_hourly_data() -> pd.DataFrame:
     """Generate 1000 bars of synthetic hourly OHLCV data."""
-    np.random.seed(HOURLY_SEED)
+    rng = np.random.RandomState(HOURLY_SEED)
     n = DEFAULT_N_BARS_HOURLY
     base_time = pd.Timestamp("2021-01-01")
     times = [base_time + pd.Timedelta(hours=i) for i in range(n)]
 
-    close = 100.0 + np.cumsum(np.random.normal(0, 0.5, n))
+    close = 100.0 + np.cumsum(rng.normal(0, 0.5, n))
     close = np.maximum(close, 10.0)
-    high = close + np.abs(np.random.normal(0, 0.3, n))
-    low = close - np.abs(np.random.normal(0, 0.3, n))
-    open_ = close - np.random.normal(0, 0.2, n)
-    volume = np.random.exponential(1000, n)
+    high = close + np.abs(rng.normal(0, 0.3, n))
+    low = close - np.abs(rng.normal(0, 0.3, n))
+    open_ = close - rng.normal(0, 0.2, n)
+    volume = rng.exponential(1000, n)
 
     return pd.DataFrame({
         "time": times,
@@ -128,34 +128,34 @@ def sample_hourly_data() -> pd.DataFrame:
 @pytest.fixture
 def sample_btc_data() -> pd.DataFrame:
     """Generate extended BTC data for feature computation."""
-    np.random.seed(BTC_SEED)
+    rng = np.random.RandomState(BTC_SEED)
     n = DEFAULT_N_BARS_BTC
     base_time = pd.Timestamp("2019-06-01")
     times = [base_time + pd.Timedelta(hours=i) for i in range(n)]
 
-    close = 10000.0 + np.cumsum(np.random.normal(0, 50, n))
+    close = 10000.0 + np.cumsum(rng.normal(0, 50, n))
     close = np.maximum(close, 1000.0)
-    high = close + np.abs(np.random.normal(0, 30, n))
-    low = close - np.abs(np.random.normal(0, 30, n))
+    high = close + np.abs(rng.normal(0, 30, n))
+    low = close - np.abs(rng.normal(0, 30, n))
 
     return pd.DataFrame({
         "time": times,
-        "open": close - np.random.normal(0, 20, n),
+        "open": close - rng.normal(0, 20, n),
         "high": high,
         "low": low,
         "close": close,
-        "volume": np.random.exponential(50000, n),
+        "volume": rng.exponential(50000, n),
     })
 
 
 @pytest.fixture
 def sample_funding_data() -> pd.DataFrame:
     """Generate synthetic funding rate data."""
-    np.random.seed(FUNDING_SEED)
+    rng = np.random.RandomState(FUNDING_SEED)
     n = DEFAULT_N_BARS_HOURLY
     base_time = pd.Timestamp("2021-01-01")
     times_8h = [base_time + pd.Timedelta(hours=i * 8) for i in range(n // 8 + 1)]
-    rates = np.random.normal(0.0001, 0.001, len(times_8h))
+    rates = rng.normal(0.0001, 0.001, len(times_8h))
     return pd.DataFrame({
         "time": times_8h,
         "funding_rate": rates,
@@ -165,29 +165,29 @@ def sample_funding_data() -> pd.DataFrame:
 @pytest.fixture
 def sample_trades() -> list[dict]:
     """Generate synthetic OOS trade records."""
-    np.random.seed(TRADES_SEED)
+    rng = np.random.RandomState(TRADES_SEED)
     n = DEFAULT_N_BARS_TRADE
     trades = []
     base_time = pd.Timestamp("2022-06-01")
     for i in range(n):
         entry = base_time + pd.Timedelta(hours=i * 100)
-        exit_ = entry + pd.Timedelta(hours=np.random.randint(5, 50))
-        r_net = np.random.normal(0.1, 0.5)
+        exit_ = entry + pd.Timedelta(hours=rng.randint(5, 50))
+        r_net = rng.normal(0.1, 0.5)
         trades.append({
             "entry_time": entry,
             "exit_time": exit_,
-            "symbol": np.random.choice(["BTCUSDT", "ETHUSDT", "SOLUSDT"]),
+            "symbol": rng.choice(["BTCUSDT", "ETHUSDT", "SOLUSDT"]),
             "r_net": r_net,
-            "entry_price": 100.0 + np.random.normal(0, 5),
-            "exit_price": 100.0 + np.random.normal(0, 5),
+            "entry_price": 100.0 + rng.normal(0, 5),
+            "exit_price": 100.0 + rng.normal(0, 5),
             "trade_dir": 1 if r_net > 0 else -1,
             "sl_pct": 0.02,
             "sl_mult": 1.5,
             "trail_atr": 3.0,
-            "m_trend": np.random.choice([1, -1]),
-            "macro_vol": np.random.uniform(0.3, 1.5),
+            "m_trend": rng.choice([1, -1]),
+            "macro_vol": rng.uniform(0.3, 1.5),
             "risk_weight": 0.01,
-            "trend_risk_mult": np.random.choice([0.5, 1.5]),
+            "trend_risk_mult": rng.choice([0.5, 1.5]),
         })
     return trades
 
@@ -195,11 +195,11 @@ def sample_trades() -> list[dict]:
 @pytest.fixture
 def sample_daily_close_matrix() -> dict[str, dict]:
     """Generate synthetic daily close matrix for portfolio sim."""
-    np.random.seed(DAILY_CLOSE_SEED)
+    rng = np.random.RandomState(DAILY_CLOSE_SEED)
     dates = pd.date_range("2022-01-01", "2024-12-31", freq="D")
     matrix: dict[str, dict] = {}
     for sym in ["BTCUSDT", "ETHUSDT", "SOLUSDT"]:
-        prices = 100.0 + np.cumsum(np.random.normal(0, 0.5, len(dates)))
+        prices = 100.0 + np.cumsum(rng.normal(0, 0.5, len(dates)))
         matrix[sym] = {d: float(p) for d, p in zip(dates, prices)}
     return matrix
 
@@ -513,15 +513,18 @@ class _MockCache:
     Parameters
     ----------
     n_bars : int
-        Number of hourly bars to generate per symbol (default 54000
-        ≈ 6.16 years, spans 2019-06-01 to ~2025-08-01).
+        Number of hourly bars to generate per symbol (default 70000
+        ≈ 7.99 years, spans 2019-06-01 to ~2027-05-26). The default
+        is sized to cover all ``HOLDOUT_PERIOD_*`` constants
+        including ``HOLDOUT_PERIOD_FAR`` (2026-01-01 → 2026-06-30)
+        with ~11 months of trailing buffer.
     data_lookup : dict, optional
         {sym: DataFrame} for per-symbol override. Useful for
         injecting custom data (e.g., low-volume, zero-price) to
         exercise universe filtering edge cases.
     """
 
-    def __init__(self, n_bars: int = 54000, data_lookup: dict | None = None):
+    def __init__(self, n_bars: int = 70000, data_lookup: dict | None = None):
         self._n_bars = n_bars
         self._data_lookup = data_lookup
         self._cache: dict = {}
@@ -557,8 +560,14 @@ class _MockCache:
                     del self._cache[k]
 
     def _build_signal_data(self) -> pd.DataFrame:
-        """Build deterministic data with vol_compression signals."""
-        np.random.seed(HOURLY_SEED)
+        """Build deterministic data with vol_compression signals.
+
+        Note: this method intentionally does NOT consume any RNG; it
+        builds a fixed OHLCV pattern (flat + spike pattern repeated
+        every 30 bars) and only depends on ``self._n_bars``.  The
+        legacy ``np.random.seed`` call was removed because no
+        stochastic draws remain in the body.
+        """
         n = self._n_bars
         n_per_signal = 30
         n_signals = min(n // n_per_signal, 100)
@@ -812,9 +821,15 @@ def _isolate_holdout_seal_files(request):
     Defaults to HOLDOUT_PERIOD, the period used by virtually every
     commit / E2E test.  Tests that use a different period can request
     the ``holdout_period_for_isolation`` marker to override the
-    default.
+    default, e.g.::
+
+        @pytest.mark.holdout_period_for_isolation(HOLDOUT_PERIOD_ALT)
+        def test_alt_period(...): ...
+
+    The marker is registered in pyproject.toml so the suite's
+    ``--strict-markers`` setting accepts it.
     """
-    marker = request.node.get_closest_marker("holdout_period")
+    marker = request.node.get_closest_marker("holdout_period_for_isolation")
     if marker is not None and marker.args:
         period = marker.args[0]
     else:

@@ -136,6 +136,20 @@ class DefaultsConfig(TypedDict):
     pf_weight_clamp_ceiling: float
     pf_decay_halflife_folds: int
     pf_min_trades_for_weight: int
+    # WFA parameter centers (L2 regularization midpoints)
+    vol_thresh_center: float
+    pullback_bars_center: float
+    trail_atr_center: float
+    sl_mult_center: float
+    rsi_oversold_center: float
+    rsi_overbought_center: float
+    # WFA parameter scales
+    vol_thresh_scale: float
+    pullback_bars_scale: float
+    trail_atr_scale: float
+    sl_mult_scale: float
+    rsi_oversold_scale: float
+    rsi_overbought_scale: float
     # Optuna search spaces (loosely typed: each strategy picks a subset
     # of keys and adds its own. See docs/methodology.md for the canonical
     # key list per strategy.)
@@ -264,6 +278,21 @@ DEFAULTS: DefaultsConfig = {
     # Default expected trades/year (used when per-experiment override
     # not provided). 30 is a reasonable conservative default.
     "default_expected_trades_per_year": 30,
+    # WFA parameter centers (L2 regularization midpoints for optuna search)
+    # Extracted from hardcoded values in core/_wfa.py WalkForwardObjective
+    "vol_thresh_center": 0.25,
+    "pullback_bars_center": 5.5,
+    "trail_atr_center": 3.25,
+    "sl_mult_center": 2.0,
+    "rsi_oversold_center": 30.0,
+    "rsi_overbought_center": 70.0,
+    # WFA parameter scales (L2 regularization scales for optuna search)
+    "vol_thresh_scale": 0.15,
+    "pullback_bars_scale": 2.5,
+    "trail_atr_scale": 1.75,
+    "sl_mult_scale": 1.0,
+    "rsi_oversold_scale": 5.0,
+    "rsi_overbought_scale": 5.0,
     # Phase 2.4: Market impact cap. Position size is capped at this
     # fraction of 24h volume. Prevents the trend multiplier (1.5x
     # with-trend) from creating unrealistically large orders on

@@ -51,21 +51,22 @@ class WalkForwardObjective:
         self.allow_short: int = allow_short
         self.search_space: dict = search_space or DEFAULTS["search_space"]
 
+        # WFA parameter centers - extracted from hardcoded values to DEFAULTS config
         self.param_center: dict[str, float] = {
-            "vol_pct_thresh": 0.25,
-            "pullback_bars": 5.5,
-            "trail_atr": 3.25,
-            "sl_mult": 2.0,
-            "rsi_oversold": 30.0,
-            "rsi_overbought": 70.0,
+            "vol_pct_thresh": DEFAULTS["vol_thresh_center"],
+            "pullback_bars": DEFAULTS["pullback_bars_center"],
+            "trail_atr": DEFAULTS["trail_atr_center"],
+            "sl_mult": DEFAULTS["sl_mult_center"],
+            "rsi_oversold": DEFAULTS["rsi_oversold_center"],
+            "rsi_overbought": DEFAULTS["rsi_overbought_center"],
         }
         self.param_scale: dict[str, float] = {
-            "vol_pct_thresh": 0.15,
-            "pullback_bars": 2.5,
-            "trail_atr": 1.75,
-            "sl_mult": 1.0,
-            "rsi_oversold": 5.0,
-            "rsi_overbought": 5.0,
+            "vol_pct_thresh": DEFAULTS["vol_thresh_scale"],
+            "pullback_bars": DEFAULTS["pullback_bars_scale"],
+            "trail_atr": DEFAULTS["trail_atr_scale"],
+            "sl_mult": DEFAULTS["sl_mult_scale"],
+            "rsi_oversold": DEFAULTS["rsi_oversold_scale"],
+            "rsi_overbought": DEFAULTS["rsi_overbought_scale"],
         }
 
         rng = np.random.default_rng(fold_seed)
