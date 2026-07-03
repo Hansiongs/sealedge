@@ -11,6 +11,7 @@ from datetime import timedelta
 
 import numpy as np
 import pandas as pd
+from scipy import stats as scipy_stats
 
 from quant_lib.core._config import DEFAULTS
 from quant_lib.core._engine import simulate_trailing_stop_trade
@@ -297,8 +298,9 @@ class TestPortfolioSpaEndToEnd:
 
         Phase 4.1 G1: previously only checked `len(null) == 0`. The
         p_value with n_iters=0 is mathematically (0+1)/(0+1) = 1.0
-        (the "+1" numerator and denominator are the Davé 2008 SPA
-        correction to avoid p=0). Verify this boundary case explicitly.
+        (the "+1" numerator and denominator are the Phipson & Smyth
+        (2010) add-one correction to avoid p=0). Verify this boundary
+        case explicitly.
         """
         asset_data, daily_close, daily_hl = _make_spa_data()
         trades = _make_spa_trades(n=3)
@@ -403,6 +405,298 @@ class TestPortfolioSpaEndToEnd:
             "all" in m.lower() and "iter" in m.lower()
             for m in caplog.messages
         ), f"Warning must mention all iterations failing. Got: {caplog.messages}"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Phase 4.x: SPA null-distribution calibration (paper claim #3)
+# ─────────────────────────────────────────────────────────────────────
+
+
+class TestSPACalibration:
+    """Paper claim #3: SPA produces well-calibrated p-values under the
+    null hypothesis AND rejects when a genuine edge is present.
+
+    These tests defend the two sides of the reviewer question
+    "how do you know SPA calibration is sound?":
+
+    1. ``test_spa_p_value_uniform_under_true_null`` -- under a TRUE null
+       (observed trades carry no edge the permuted null cannot
+       reproduce), p-values are approximately uniform on (0, 1], so the
+       false-positive rate at alpha matches alpha (KS test vs uniform).
+    2. ``test_spa_rejects_when_real_edge_present`` -- when a real edge
+       IS injected, SPA rejects >= 90% of the time (positive control,
+       guards false-negative bugs the null test cannot see).
+
+    Both rely on ``_make_observed_from_simulator``: observed trades are
+    drawn from the same ``simulate_trailing_stop_trade`` engine the
+    permuted null uses (apples-to-apples PnL mechanism). The prior
+    implementation drew observed ``r_net`` from a fixture while the null
+    re-simulated PnL from price data -- a mechanism mismatch that made
+    the resulting p-values measure the random-walk generator rather than
+    SPA calibration.
+
+    The two ``*_for_nonzero_n_iters`` structural tests below pin the
+    Phipson-Smyth add-one bounds (p in [1/(N+1), 1.0]); they are
+    necessary but NOT sufficient on their own (a degenerate p=1/(N+1)
+    always-constant formula passes both yet is uncalibrated).
+    """
+
+    def test_spa_p_value_below_ceiling_for_nonzero_n_iters(self):
+        """Structural invariant: SPA p_value <= 1.0 always.
+
+        Even with n_exceed == n_iters (every null equity exceeded the
+        observed), the add-one correction gives p = (n+1)/(n+1) = 1.0.
+        This guards against a future change that produces p > 1.0
+        (mathematical nonsense).
+        """
+        asset_data, daily_close, daily_hl = _make_spa_data()
+        trades = _make_spa_trades(n=5)
+
+        _, _, p = portfolio_spa(
+            observed_trades=trades,
+            asset_data=asset_data,
+            daily_close_matrix=daily_close,
+            daily_hl_matrix=daily_hl,
+            end_date="2024-02-01",
+            n_iters=10,
+            rng_seed=42,
+            verbose=False,
+        )
+        if not np.isnan(p):
+            assert p <= 1.0, (
+                f"SPA p-value {p} exceeds the upper bound 1.0. "
+                f"The add-one correction guarantees p in [1/(n_iters+1), 1.0]."
+            )
+
+    def test_spa_p_value_above_floor_for_nonzero_n_iters(self):
+        """Phipson-Smyth (2010) add-one correction guarantees p >= 1/(N+1).
+
+        For any n_iters > 0, no SPA run on any inputs can produce
+        p_value < 1/(n_iters+1). If a future change removes the +1
+        correction, this test catches it.
+        """
+        asset_data, daily_close, daily_hl = _make_spa_data()
+        trades = _make_spa_trades(n=20)
+
+        for n_iters in (10, 50, 200):
+            _, _, p = portfolio_spa(
+                observed_trades=trades,
+                asset_data=asset_data,
+                daily_close_matrix=daily_close,
+                daily_hl_matrix=daily_hl,
+                end_date="2024-02-01",
+                n_iters=n_iters,
+                rng_seed=42,
+                verbose=False,
+            )
+            if not np.isnan(p):
+                assert p >= 1.0 / (n_iters + 1), (
+                    f"SPA p-value {p} is below the Phipson-Smyth floor "
+                    f"1/(n_iters+1) = {1.0/(n_iters+1):.6f} for "
+                    f"n_iters={n_iters}. The add-one correction may "
+                    f"have been removed."
+                )
+
+    def _make_observed_from_simulator(
+        self, asset_data, seed, n_trades=20, r_net_drift=0.0
+    ):
+        """Build observed trades whose ``r_net`` is drawn from the SAME
+        ``simulate_trailing_stop_trade`` engine that the SPA null permutes
+        over -- making observed and null PnL mechanism apples-to-apples.
+
+        This is the methodologically-correct way to construct a true-null
+        experiment: the observed trades carry no structural edge that the
+        null cannot also reproduce by re-anchoring in time. ``r_net_drift``
+        shifts every observed ``r_net`` by a constant (positive => real
+        edge injected for the positive control).
+
+        The PRIOR calibration test here drew observed ``r_net`` from a
+        fixture (0.0 / constant) while the null re-simulated PnL from
+        price data via ``simulate_trailing_stop_trade`` -- those two PnL
+        mechanisms differ (e.g. cost model), so the resulting p-values
+        were not comparable and the test was effectively measuring the
+        random-walk price generator, not SPA calibration.
+        """
+        rng = np.random.default_rng(seed)
+        sym = "BTCUSDT"
+        df = asset_data[sym]
+        times = df["time"].values
+        t0 = times[0]
+        total_h = (times[-1] - t0) / np.timedelta64(1, "h")
+        trades = []
+        for _ in range(n_trades):
+            entry_h = rng.uniform(0, total_h * 0.8)
+            idx = int(np.searchsorted(
+                (times - t0) / np.timedelta64(1, "h"), entry_h
+            ))
+            if idx >= len(df) - 20:
+                idx = len(df) - 20
+            direction = int(rng.integers(0, 2)) * 2 - 1  # +1 or -1
+            exit_idx, exit_price, net_r, _ = simulate_trailing_stop_trade(
+                df["high"].values, df["low"].values, df["close"].values,
+                df["atr"].values,
+                df["funding_rate"].values, df["is_funding_hour"].values,
+                df["is_weekend"].values, df["macro_trend"].values,
+                idx, direction,
+                1.5, 3.0, DEFAULTS["bailout_bars"],
+                0.05, 0.0, 1.0, float(rng.random()), 1.0, 1.0,
+            )
+            if exit_idx < 0:
+                continue
+            en_pr = float(df["close"].iloc[idx])
+            sl_dist = df["atr"].iloc[idx] * 1.5
+            trades.append({
+                "entry_time": pd.Timestamp(df["time"].iloc[idx]),
+                "exit_time": pd.Timestamp(df["time"].iloc[exit_idx]),
+                "symbol": sym,
+                "trade_dir": direction,
+                "entry_price": en_pr,
+                "exit_price": float(exit_price),
+                "sl_pct": sl_dist / en_pr,
+                "r_net": float(net_r) + r_net_drift,
+                "sl_mult": 1.5,
+                "trail_atr": 3.0,
+                "risk_weight": 0.01,
+            })
+        return trades
+
+    def test_spa_p_value_uniform_under_true_null(self):
+        """Positive calibration: under a true null (observed trades carry
+        no edge the null cannot reproduce), SPA p-values must be
+        approximately uniform on (0, 1] -- so the false-positive rate
+        at alpha matches alpha. This is the test a JSS reviewer asks
+        for: "how do you know SPA isn't producing spurious significance
+        at rate != alpha?".
+
+        Methodology: run ``N_EXPERIMENTS`` INDEPENDENT true-null
+        experiments (a fresh random-walk price dataset per experiment,
+        observed trades drawn from the SAME simulator the null uses),
+        with a FIXED ``rng_seed`` for the permutation RNG. Collect one
+        p-value per experiment and run a one-sample KS test against the
+        uniform distribution. Varying ``rng_seed`` on ONE dataset (the
+        prior implementation) is NOT a valid calibration -- it varies
+        the null draw of a single experiment, not the experiment itself,
+        and so does not sample the null distribution of p-values.
+
+        Threshold: KS statistic < 0.25 (the prior mean-band test would
+        pass with KS as high as 0.43; 0.25 is far tighter while still
+        tolerating the small-N sampling noise of 40 experiments).
+        Empirically calibrated to ~0.10 across multiple seeds.
+        """
+        n_experiments = 40
+        p_values = []
+        for ds in range(n_experiments):
+            # Fresh random-walk dataset per experiment (independent H0).
+            asset_data, daily_close, daily_hl = _make_spa_data(
+                n_bars=2000, seed=ds * 7 + 1,
+            )
+            trades = self._make_observed_from_simulator(asset_data, seed=42)
+            if len(trades) < 5:
+                continue
+            _, _, p = portfolio_spa(
+                observed_trades=trades,
+                asset_data=asset_data,
+                daily_close_matrix=daily_close,
+                daily_hl_matrix=daily_hl,
+                end_date="2024-02-01",
+                n_iters=120,
+                rng_seed=42,  # FIXED -- varying this was the prior bug
+                verbose=False,
+                asset_risk_weights={"BTCUSDT": 0.01},
+            )
+            if not np.isnan(p):
+                p_values.append(p)
+
+        # Sanity: enough valid experiments survived the degenerate-anchor
+        # / empty-trade guards.
+        assert len(p_values) >= 30, (
+            f"Too few valid calibration experiments "
+            f"({len(p_values)}/{n_experiments}); the degenerate-anchor "
+            f"guard may be triggering too aggressively."
+        )
+
+        # No single p-value outside the Phipson-Smyth legal range.
+        for i, p in enumerate(p_values):
+            assert 1.0 / 121 <= p <= 1.0, (
+                f"p_value[{i}] = {p} is outside the legal range "
+                f"[1/121, 1.0] for n_iters=120."
+            )
+
+        # KS against uniform: uniformity is the calibration property.
+        ks_stat, ks_p = scipy_stats.kstest(p_values, "uniform")
+        assert ks_stat < 0.25, (
+            f"Phase 4.x: SPA p-values under the true null are NOT "
+            f"uniform (KS stat={ks_stat:.3f}, p={ks_p:.3f}). This means "
+            f"SPA is producing spurious significance at a rate != alpha "
+            f"-- the central paper claim #3. p-values: "
+            f"{sorted(p_values)}. Possible causes: a biased time-anchor "
+            f"distribution, a degenerate-anchor guard that over-triggers, "
+            f"or an observed/null PnL mechanism mismatch."
+        )
+
+    def test_spa_rejects_when_real_edge_present(self):
+        """Positive control: when a genuine edge IS present (observed
+        ``r_net`` consistently exceeds the null's r_net by a positive
+        drift), SPA must reject the null at least 90% of the time across
+        20 independent experiments. This guards against a false-NEGATIVE
+        bug -- e.g. a future change that makes the null trivially always
+        exceed the observed (returning p=1.0 regardless of edge) -- which
+        the null-calibration test above cannot catch (it never sees a
+        non-null input).
+
+        drift_R=1.0 R/trade was chosen empirically: it yields a stable
+        100% reject rate across observed-seeds 42 and 7, leaving margin
+        above the 90% bar so the test stays sensitive to a real
+        calibration regression (a regression that drops the reject rate
+        below 90% would be flagged) without hard-coding an edge so large
+        that even a broken SPA could reject.
+        """
+        drift_r = 1.0  # R/trade of injected edge (empirically calibrated)
+        n_experiments = 20
+        n_reject = 0
+        n_valid = 0
+        for ds in range(n_experiments):
+            asset_data, daily_close, daily_hl = _make_spa_data(
+                n_bars=2000, seed=ds * 7 + 1,
+            )
+            trades = self._make_observed_from_simulator(
+                asset_data, seed=42, r_net_drift=drift_r,
+            )
+            if len(trades) < 5:
+                continue
+            _, _, p = portfolio_spa(
+                observed_trades=trades,
+                asset_data=asset_data,
+                daily_close_matrix=daily_close,
+                daily_hl_matrix=daily_hl,
+                end_date="2024-02-01",
+                n_iters=200,
+                rng_seed=42,
+                verbose=False,
+                asset_risk_weights={"BTCUSDT": 0.01},
+            )
+            if np.isnan(p):
+                continue
+            n_valid += 1
+            if p < 0.05:
+                n_reject += 1
+
+        # Need at least 18 valid experiments; the prior positive-control
+        # test simply did not exist (docstring admitted it). An empty
+        # experiment list would vacuously satisfy any rate bar.
+        assert n_valid >= 18, (
+            f"Too few valid positive-control experiments "
+            f"({n_valid}/{n_experiments})."
+        )
+        reject_rate = n_reject / n_valid
+        assert reject_rate >= 0.90, (
+            f"Phase 4.x: SPA failed to reject under a genuine edge "
+            f"(reject rate {n_reject}/{n_valid} = "
+            f"{reject_rate:.0%} < 90%). This signals a false-NEGATIVE "
+            f"calibration bug -- SPA may be returning p=1.0 "
+            f"regardless of observed edge. Check the all-fail guard "
+            f"(_spa.py:309) and the null-comparison at _spa.py:318."
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────

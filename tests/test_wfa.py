@@ -9,7 +9,7 @@ Targets:
 
 import inspect
 from contextlib import contextmanager
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
@@ -394,6 +394,156 @@ class TestRunWfaPerSymbol:
             f"v0.3.1 Bug: 'no trades' branch should have exactly 1 "
             f"console.print call, found {print_count}. "
             f"Branch source:\n{branch_src}"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Phase 4.x: Deterministic walk-forward reproducibility (paper claim #4)
+# ─────────────────────────────────────────────────────────────────────
+
+
+class TestWFAReproducibility:
+    """Paper claim #4: WFA is deterministic given the same inputs.
+
+    These tests assert bit-identical reproducibility for the WFA
+    fold-param pipeline. Without them, an engineer could silently
+    replace ``TPESampler(seed=fold_seed)`` with ``TPESampler(seed=None)``
+    or switch to ``np.random.seed`` and all existing tests would
+    still pass -- but the paper-claim defense would be gone.
+    """
+
+    def test_run_wfa_same_inputs_produces_identical_fold_params(self):
+        """Two runs with the same data + same GLOBAL_SEED must produce
+        bit-identical fold_params_list."""
+        df = _make_prepped_df(n=5000, seed=42)
+        with patch_wfa_static(min_train_months=3, trials=3, test_months=2):
+            _, params_a, _ = run_wfa_per_symbol(
+                "BTCUSDT", df, use_rvol=True, use_ema=True,
+                verbose=False, strategy_type=0,
+            )
+            _, params_b, _ = run_wfa_per_symbol(
+                "BTCUSDT", df, use_rvol=True, use_ema=True,
+                verbose=False, strategy_type=0,
+            )
+        # If folds were produced, they must be byte-identical.
+        assert params_a == params_b, (
+            f"Phase 4.x: WFA reproducibility broken. Two runs with "
+            f"same inputs produced different fold params. "
+            f"Run A: {params_a[:2]}... Run B: {params_b[:2]}..."
+        )
+
+    def test_run_wfa_different_symbols_produce_different_params(self):
+        """Different symbols get distinct ``_sym_seed`` contributions to
+        ``fold_seed``, so fold params must differ between symbols."""
+        df = _make_prepped_df(n=5000, seed=42)
+        with patch_wfa_static(min_train_months=3, trials=3, test_months=2):
+            _, params_btc, _ = run_wfa_per_symbol(
+                "BTCUSDT", df, use_rvol=True, use_ema=True,
+                verbose=False, strategy_type=0,
+            )
+            _, params_eth, _ = run_wfa_per_symbol(
+                "ETHUSDT", df, use_rvol=True, use_ema=True,
+                verbose=False, strategy_type=0,
+            )
+        # Both should produce fold params (deterministic behavior).
+        # If both produce folds, the params must differ between symbols
+        # (distinct _sym_seed XOR-mixes into fold_seed).
+        if params_btc and params_eth:
+            assert params_btc != params_eth, (
+                "Two symbols with distinct _sym_seed should produce "
+                "distinct fold_params_list -- they share GLOBAL_SEED "
+                "but differ in the symbol char-code sum component."
+            )
+
+    def test_run_wfa_fold_params_include_expected_keys(self):
+        """Regression guard: fold_params_list must contain the keys
+        that downstream code (commit reporting, risk allocation)
+        relies on. If a future refactor renames or drops a key,
+        this catches it."""
+        df = _make_prepped_df(n=5000, seed=42)
+        with patch_wfa_static(min_train_months=3, trials=3, test_months=2):
+            _, params, _ = run_wfa_per_symbol(
+                "BTCUSDT", df, use_rvol=True, use_ema=True,
+                verbose=False, strategy_type=0,
+            )
+        if params:
+            first = params[0]
+            for required_key in (
+                "symbol", "fold", "total_folds",
+                "is_start", "oos_start", "oos_end",
+                "best_value",
+                "vol_pct_thresh", "pullback_bars",
+                "trail_atr", "sl_mult",
+            ):
+                assert required_key in first, (
+                    f"fold_params_list entries must include {required_key!r}"
+                )
+
+    def test_run_wfa_different_seed_changes_fold_params(self):
+        """Paper claim #4 (determinism): the GLOBAL_SEED parameter MUST be
+        consumed by the per-fold seed. If a future change replaced
+        ``TPESampler(seed=fold_seed)`` with ``TPESampler(seed=None)``
+        (or removed the XOR mix), the same-input test above would still
+        pass -- but seed-level determinism would be silently broken.
+
+        This test defends that hole: same symbol + same data, but a
+        patched ``quant_lib.core._wfa.GLOBAL_SEED`` (42 -> 43). The
+        fold seeds are ``GLOBAL_SEED ^ _sym_seed ^ (is_year*100+is_month)``
+        (see ``_wfa.py:471``), so flipping the base seed flips every
+        fold seed by a constant, which the TPE sampler + OOS RNG + IS
+        RNG all consume. If those streams are wired correctly, at least
+        one fold's winning params must differ between the two runs.
+
+        We patch the *module-namespace* binding (``quant_lib.core._wfa.
+        GLOBAL_SEED``), not ``quant_lib.core._config.GLOBAL_SEED`` --
+        ``_wfa.py`` imports the name via ``from ... import GLOBAL_SEED``
+        (a copy of the reference, not a dynamic lookup), so only the
+        module attribute is read at fold-seed construction time.
+        """
+        df = _make_prepped_df(n=8000, seed=42)
+
+        # test_months=1 (not 2) is required: with min_train_months=3 and
+        # hourly data, larger OOS windows drain the dataset before enough
+        # folds can form. Empirically this config produces 4 active folds
+        # on this synthetic data (verified across seeds 7/42/100/2024),
+        # which is what the seed-divergence assertion needs.
+        with patch_wfa_static(min_train_months=3, trials=3, test_months=1):
+            # Run 1: default GLOBAL_SEED (42, imported into _wfa).
+            _, params_default, _ = run_wfa_per_symbol(
+                "BTCUSDT", df, use_rvol=True, use_ema=True,
+                verbose=False, strategy_type=0,
+            )
+            # Run 2: patch the module-level GLOBAL_SEED to 43.
+            with patch("quant_lib.core._wfa.GLOBAL_SEED", 43):
+                _, params_patched, _ = run_wfa_per_symbol(
+                    "BTCUSDT", df, use_rvol=True, use_ema=True,
+                    verbose=False, strategy_type=0,
+                )
+
+        # Both runs must produce folds -- otherwise the test cannot
+        # exercise seed-level determinism (a degenerate dataset that
+        # skips every fold would give two empty lists and vacuously
+        # "pass"). Fail loudly here so a future data-generation change
+        # that breaks fold generation surfaces immediately.
+        assert params_default, (
+            "Phase 4.x: run with default seed produced no folds -- the "
+            "synthetic dataset no longer exercises the WFA fold pipeline. "
+            "Fix _make_prepped_df or this test's patch_wfa_static config."
+        )
+        assert params_patched, (
+            "Phase 4.x: run with patched seed produced no folds -- "
+            "the seed patch may have broken fold construction."
+        )
+
+        # The two runs share identical data + symbol but differ only in
+        # GLOBAL_SEED. If the seed is wired into the RNG streams, at
+        # least one fold's winning params must differ.
+        assert params_default != params_patched, (
+            "Phase 4.x: WFA seed determinism broken. Patching "
+            "`quant_lib.core._wfa.GLOBAL_SEED` from 42 -> 43 produced "
+            "bit-identical fold params -- GLOBAL_SEED is NOT consumed "
+            "by the per-fold seed (check TPESampler(seed=...) at "
+            "_wfa.py:540 and the fold_seed XOR mix at _wfa.py:471)."
         )
 
 
