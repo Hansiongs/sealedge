@@ -294,7 +294,7 @@ def portfolio_spa(
             pct = (it + 1) / n_iters * 100
             console.print(f"   SPA progress: {pct:.0f}% ({it+1}/{n_iters})")
 
-    # Phipson-Bell (2010) add-one correction. Note: this is NOT a
+    # Phipson & Smyth (2010) add-one correction. Note: this is NOT a
     # proper Hansen 2005 SPA null -- the null here is uniform time-
     # anchored permutation of observed trades, which preserves cross-
     # asset co-occurrence structure. This correction is the standard

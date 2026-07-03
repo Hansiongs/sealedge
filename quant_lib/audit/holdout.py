@@ -287,6 +287,33 @@ class HoldoutSet:
         self.name = name
         self._seal = HoldoutSeal(start=start, end=end, seal_file=seal_path)
         self._tampered = False
+        # ── One-shot holdout invariant (Phase 4.x Blocker fix) ──
+        # If a sealed or broken seal file already exists at ``seal_path``,
+        # load it into in-memory state so subsequent ``seal()`` /
+        # ``is_sealed()`` / ``commit_break()`` see the prior state.
+        # Without this, a second ``ResearchSession(...)`` against the
+        # same holdout_period would silently overwrite the broken seal
+        # file (contradicting "Only one test -- once the holdout is
+        # used, it dies as a holdout").
+        #
+        # We only load when (a) the file exists, (b) it parses as JSON,
+        # and (c) the HMAC signature is valid under the current secret.
+        # If any check fails, we silently fall through to fresh
+        # in-memory state -- this preserves the existing tamper-
+        # detection behavior (an invalid signature must NOT be
+        # trusted; the verify() path still raises _tampered).
+        if seal_path and os.path.exists(seal_path):
+            try:
+                with open(seal_path, "r") as f:
+                    saved = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                saved = None
+            if saved is not None and verify_seal_signature(saved):
+                # Valid signature under current secret: replicate state.
+                self._seal.sealed_at = saved.get("sealed_at")
+                self._seal.broken_at = saved.get("broken_at")
+                self._seal.data_hash = saved.get("data_hash")
+                self._seal.signature = saved.get("signature")
 
     def seal(self, data_hash: str) -> None:
         """Lock the holdout set with an HMAC-signed seal.

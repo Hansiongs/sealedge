@@ -65,7 +65,7 @@ def spa_test(
     null_equities : np.ndarray
         Equity from each permutation iteration.
     p_value : float
-        SPA p-value (Davé 2008 corrected).
+        SPA p-value (Phipson & Smyth 2010 add-one corrected).
     """
     if asset_risk_weights is None:
         asset_risk_weights = None  # Let portfolio_spa handle None

@@ -293,19 +293,31 @@ Deflated Sharpe Ratio."
 ### SPA (Superior Predictive Ability)
 
 `core/_spa.py:20-265`. Tests whether the observed strategy edge
-is genuine or random, using time-anchored circular permutation.
+is genuine or random, using **time-anchored circular permutation**
+of observed trades.
+
+> **Note on null distribution**: this is **not** a proper Hansen
+> (2005) SPA stationary-bootstrap null. The null here is a uniform
+> time-anchored permutation of the observed trades, which preserves
+> cross-asset co-occurrence structure (all trades share a single
+> random anchor offset per iteration, so relative timing between
+> assets is unchanged). The implementation explicitly disclaims
+> Hansen (2005) conformance in `core/_spa.py:297-303`.
 
 - Bootstrap the null distribution by permuting trade entry times
 - Compare observed equity against the null
-- Compute Phipson-Bell (2010) corrected p-value (the standard
-  add-one correction for permutation tests; attribution corrected
-  from prior "Davé (2008)" label, see `core/_spa.py:297-303`):
+- Compute Phipson & Smyth (2010) corrected p-value (the standard
+  add-one correction for permutation tests):
   ```
   p = (n_exceed + 1) / (n_iters + 1)
   ```
 
-References: Hansen (2005), "A Test for Superior Predictive Ability";
-Phipson & Smyth (2010), "Permutation P-values Should Never Be Zero".
+References: Hansen (2005), "A Test for Superior Predictive Ability"
+(provides the test-statistic framework); Phipson & Smyth (2010),
+"Permutation P-values Should Never Be Zero" (provides the add-one
+correction applied here). Note: a prior reference list entry cited
+"Davé & Seal (2008)" for this correction; that paper does not
+address the add-one — the correct citation is Phipson & Smyth (2010).
 
 ### FDR (Benjamini-Hochberg)
 
@@ -360,8 +372,12 @@ Two strategy types supported via `strategy_type` int (0=vol_compression,
   Non-Normality." *Journal of Portfolio Management* 40(5).
 - Hansen, P. R. (2005). "A Test for Superior Predictive Ability."
   *Journal of Business & Economic Statistics* 23(4).
-- Davé, R. D. & Seal, K. (2008). "Improved Bootstrap Confidence
-  Intervals." Working paper.
+- Phipson, B. & Smyth, G. K. (2010). "Permutation P-values Should
+  Never Be Zero: Calculating Exact P-values When Permutations Are
+  Randomly Drawn." *Statistical Applications in Genetics and
+  Molecular Biology* 9(1), Article 39.
+  (Note: the prior entry for "Davé & Seal (2008)" has been retired;
+  it did not address the add-one correction used here.)
 - Benjamini, Y. & Hochberg, Y. (1995). "Controlling the False
   Discovery Rate: A Practical and Powerful Approach to Multiple
   Testing." *Journal of the Royal Statistical Society, Series B*
@@ -388,6 +404,12 @@ given the same configuration.
 
 ## 12. Versioning
 
-This methodology applies to `quant_lib` v0.2.2 (released
-2026-06-26). Major methodology changes will be documented in
-`CHANGELOG.md` with version bumps.
+This methodology applies to **`quant_lib` v0.5.1** (released
+2026-07-01; matches `pyproject.toml:7`). Major methodology changes
+will be documented in `CHANGELOG.md` with version bumps.
+
+**Drift detection**: when bumping `pyproject.toml` `version`, also
+update the version pin in this section and re-validate that every
+formula reference (`core/_testing.py:…`, `core/_wfa.py:…`,
+`core/_spa.py:…`) still matches the current source — line numbers
+shift as the code evolves.

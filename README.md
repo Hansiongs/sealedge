@@ -9,7 +9,7 @@ adjustment) so that reported results can be defended to a skeptical reviewer.
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-1318_passing-brightgreen.svg)](.github/workflows/tests.yml)
+[![Tests](https://img.shields.io/badge/tests-1325_passing-brightgreen.svg)](.github/workflows/tests.yml)
 [![CI](https://github.com/Hansiongs/hans-backtest/actions/workflows/tests.yml/badge.svg)](.github/workflows/tests.yml)
 [![Lint](https://github.com/Hansiongs/hans-backtest/actions/workflows/lint.yml/badge.svg)](.github/workflows/lint.yml)
 [![Version 0.5.1](https://img.shields.io/badge/version-0.5.1-blue.svg)](CHANGELOG.md)
@@ -26,8 +26,10 @@ inflated results. quant_lib solves this with:
 - **Multiple-testing correction** — Bonferroni (1-indexed) + FDR (BH)
 - **PSR + ESS** instead of raw Sharpe (accounts for skew/kurtosis,
   autocorrelation)
-- **SPA test** (Hansen 2005, Davé-corrected) for final portfolio
-  significance
+- **SPA test** (uniform time-anchored circular permutation of observed
+  trades, with Phipson & Smyth (2010) add-one correction) for final
+  portfolio significance. Note: this is *not* a proper Hansen (2005)
+  SPA stationary-bootstrap null — see `docs/methodology.md`.
 
 See [docs/methodology.md](docs/methodology.md) for the full method
 writeup.
@@ -216,7 +218,7 @@ methodology writeup. Highlights:
 ## Testing
 
 ```bash
-# Run all 1169 tests (~140s)
+# Run all 1324 tests (~150s)
 make test
 
 # Run fast tests only (skips @pytest.mark.slow)
@@ -230,7 +232,7 @@ make test-cov
 make lint
 ```
 
-**Test categories** (1169 total):
+**Test categories** (1324 total):
 - Unit tests (per-function)
 - Integration tests (component interaction)
 - Property-based tests (Hypothesis, ~22 invariants)
@@ -260,7 +262,7 @@ quant_lib/
 ├── core/               # Private implementation (JIT engine)
 ├── research/           # ResearchSession, Candidate, commit
 ├── experiments/        # (within quant_lib/) User-defined experiment configs
-├── tests/              # 1169 tests
+├── tests/              # 1324 tests
 ├── tools/              # Public composable API
 ├── utils/              # Shared utilities
 ├── docs/
@@ -311,7 +313,7 @@ make mutate        # mutation testing (slow, ~10-30 min)
 ## Status
 
 This is a research-quality framework. Critical paths have high test
-coverage (1109 tests, including property-based, reproducibility, and
+coverage (1324 tests, including property-based, reproducibility, and
 config validation). Branch coverage is tracked via `--cov-branch`
 (enforced in `make test-cov`). The core engine (`core/_engine.py`)
 is exercised by integration tests but the JIT-compiled body is

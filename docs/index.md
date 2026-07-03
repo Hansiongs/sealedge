@@ -12,8 +12,11 @@ reproducible research guarantees.
   Every experiment is counted; ablation studies are half-weighted.
 - **Probabilistic Sharpe Ratio** (Bailey & Lopez de Prado 2012): accounts
   for skewness and kurtosis, not just mean/variance.
-- **Superior Predictive Ability** (Hansen 2005 + Davé 2008): portfolio-level
-  test with time-anchored circular permutation.
+- **Superior Predictive Ability** (uniform time-anchored permutation of
+  observed trades + Phipson & Smyth 2010 add-one correction): portfolio-level
+  test. Note: this is not a proper Hansen (2005) stationary-bootstrap null —
+  see [`docs/methodology.md`](methodology.md) §6 for the exact null and its
+  limitations.
 - **Walk-Forward Analysis**: Optuna-based per-symbol optimisation with
   L2 regularization toward search-space center.
 - **Per-fold PF-weighted risk allocation**: decaying halflife weights
