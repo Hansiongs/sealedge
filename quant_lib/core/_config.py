@@ -83,6 +83,13 @@ class StaticConfig(TypedDict):
     bootstrap_block_size_max: int
     spa_n_iters: int
     spa_equity_warn_threshold_usd: float
+    # SPA Hansen-literal stationary-bootstrap expected block length. 0 = use
+    # the Politis-Romano default p = max(1, round(n_k ** (1/3))) per trial;
+    # >0 forces a fixed expected block length (paper-disclosed calibration
+    # knob). Phase 5 (claim #3 Blocker A): Hansen (2005) SPA null uses a
+    # Politis-Romano (1994) stationary block bootstrap over IS loss-
+    # differentials; this knob overrides the n_k^(1/3) heuristic.
+    spa_hansen_block_length_override: int
     # WFA purge (MAXIMUM; adaptive via _get_purge_days)
     wfa_purge_days: int
     # WFA contiguity: IS/OOS folds with internal gaps larger than this
@@ -180,6 +187,10 @@ STATIC: StaticConfig = {
     "bootstrap_block_size_min": 20,         # min block size for bootstrap
     "bootstrap_block_size_max": 120,        # max block size
     "spa_n_iters": 2000,                    # SPA permutation iterations
+    # Hansen-literal SPA stationary-bootstrap expected block length. 0 = use
+    # Politis-Romano p = max(1, round(n_k ** (1/3))) per trial (default);
+    # >0 = fixed expected block length override (paper-disclosed calibration).
+    "spa_hansen_block_length_override": 0,
     "spa_equity_warn_threshold_usd": 10.0,  # SPA transparency check
     # WFA -- purge days depend on feature lookback (infrastructure)
     # Purge ≥ max lookback window vol_pct_rank (720 bar 1H = 30 days)

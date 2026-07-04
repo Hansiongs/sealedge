@@ -284,6 +284,63 @@ def run_trade_bootstrap(
     }
 
 
+def _stationary_block_bootstrap_resample(
+    arr: "np.ndarray",
+    rng: "np.random.Generator",
+    p: int,
+    n_out: "int | None" = None,
+) -> "np.ndarray":
+    """Politis-Romano (1994) stationary block bootstrap resample.
+
+    Returns a resampled copy of ``arr`` of length ``n_out`` (default ``len(arr)``).
+    Each block starts at a uniformly-random index and has length ``L ~ Geometric(1/p)``
+    (expected length ``= p``), wrapped circularly via ``% n`` (same trick as
+    ``run_trade_bootstrap``). Concatenate blocks until length >= target, truncate.
+
+    Parameters
+    ----------
+    arr : np.ndarray
+        1D input series (the loss-differential or PnL array to resample).
+    rng : np.random.Generator
+        Seeded generator (the Hansen caller passes ``default_rng(rng_seed + 1)``).
+    p : int
+        Expected block length (p >= 1). ``p = max(1, int(round(n ** (1/3))))`` is the
+        Politis-Romano default heuristic; pass a STATIC override if > 0.
+    n_out : int, optional
+        Output length; defaults to ``len(arr)``.
+
+    Returns
+    -------
+    np.ndarray
+        Resampled array of length ``n_out`` (or ``len(arr)``). Empty if ``len(arr) < 1``.
+        NaN-safe: a degenerate input (n<2 or all-identical) returns a finite resample
+        (the wrap just repeats values); downstream guards handle std==0 separately.
+    """
+    arr = np.asarray(arr, dtype=np.float64).ravel()
+    n = arr.shape[0]
+    if n < 1 or p < 1:
+        return arr.copy()
+    target = n_out if n_out is not None else n
+    if target < 1:
+        return np.empty(0, dtype=np.float64)
+    prob = 1.0 / float(p)
+    chunks: list = []
+    total = 0
+    # Cap iterations to avoid pathological infinite loops; geometric draws
+    # almost always terminate well before this.
+    max_blocks = 4 * target + 64
+    while total < target and len(chunks) < max_blocks:
+        start = int(rng.integers(0, n))
+        length = int(rng.geometric(prob))
+        if length < 1:
+            length = 1
+        idx = (np.arange(start, start + length) % n)
+        chunks.append(arr[idx])
+        total += length
+    out = np.concatenate(chunks)[:target]
+    return out
+
+
 def compute_regime_stats(executed_trades: list[dict]) -> dict[str, tuple[float, int]]:
     """Compute profit factor per macro regime (Bull/Bear based on BTC macro trend)."""
     bull_trades = [t for t in executed_trades if t.get("m_trend") == 1]

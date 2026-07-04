@@ -532,6 +532,16 @@ class TestSPACalibration:
             if idx >= len(df) - 20:
                 idx = len(df) - 20
             direction = int(rng.integers(0, 2)) * 2 - 1  # +1 or -1
+            # Positional cost-model args (positional because
+            # ``simulate_trailing_stop_trade`` takes them positionally).
+            # Phase 2 cost-parity fix: positions 14/15/17/18 previously
+            # diverged from production DEFAULTS (0.0/1.0/1.0/1.0) while
+            # the SPA null path (``_spa.py`` L221-272 sim) uses the
+            # production cost model. That made observed equity biased high
+            # and the calibration over-attributed uniformity to a cost
+            # subsidy. Now both sides share the same DEFAULTS stress model
+            # (apples-to-apples PnL). ``float(rng.random())`` at pos 16 is
+            # the per-trade random draw (no DEFAULTS) -- stays as-is.
             exit_idx, exit_price, net_r, _ = simulate_trailing_stop_trade(
                 df["high"].values, df["low"].values, df["close"].values,
                 df["atr"].values,
@@ -539,7 +549,12 @@ class TestSPACalibration:
                 df["is_weekend"].values, df["macro_trend"].values,
                 idx, direction,
                 1.5, 3.0, DEFAULTS["bailout_bars"],
-                0.05, 0.0, 1.0, float(rng.random()), 1.0, 1.0,
+                0.05,
+                DEFAULTS["weekend_liquidity_penalty"],   # pos 14 (was 0.0)
+                DEFAULTS["stress_test_multiplier"],       # pos 15 (was 1.0)
+                float(rng.random()),                      # pos 16 random draw
+                DEFAULTS["trend_aligned_risk_mult"],      # pos 17 (was 1.0)
+                DEFAULTS["trend_counter_risk_mult"],      # pos 18 (was 1.0)
             )
             if exit_idx < 0:
                 continue
