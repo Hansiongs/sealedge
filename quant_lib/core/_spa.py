@@ -492,12 +492,22 @@ def portfolio_spa(
             pct = (it + 1) / n_iters * 100
             console.print(f"   SPA progress: {pct:.0f}% ({it+1}/{n_iters})")
 
-    # Phipson & Smyth (2010) add-one correction. Note: this is NOT a
-    # proper Hansen 2005 SPA null -- the null here is uniform time-
-    # anchored permutation of observed trades, which preserves cross-
-    # asset co-occurrence structure. This correction is the standard
-    # add-one for permutation tests (Phipson & Smyth 2010). The
-    # incorrect "Davé 2008" label was removed; correct citation is
+    # Two coexisting SPA nulls (Phase 7) -- caller selects via kwargs:
+    #   * LEGACY -- the default. Uniform time-anchored circular permutation
+    #     of the observed trades (preserves cross-asset co-occurrence).
+    #     This is what ``p_value`` below computes (Phipson & Smyth 2010
+    #     add-one over ``n_exceed`` / ``n_iters + 1``).
+    #   * HANSEN-LITERAL -- opt-in via ``recenter_policy="hansen_literal"``
+    #     + ``trial_r_nets`` + ``return_statistics=True``. Politis-Romano
+    #     stationary block bootstrap over the per-trial IS loss-
+    #     differentials ``d_k = -r_net_k`` + Hansen (2005) Eq.7 recenter/
+    #     discarding + Eq.8 cross-strategy max-statistic + Phipson &
+    #     Smyth add-one (Hansen 2005). See ``_hansen_spa_p_value`` above.
+    #     The Hansen path is NUMPY-ONLY on ``pnl_array``s (zero
+    #     ``simulate_*`` calls) so the legacy spy invariant
+    #     ``len(recorded_idx) == 2*n_iters`` holds by construction on
+    #     BOTH paths (see ``tests/test_spa_validation.py``).
+    # The incorrect "Davé 2008" label was removed; correct citation is
     # Phipson & Smyth (2010) for add-one correction in permutation tests.
     # Phase 3 (v0.4.1): detect when ALL SPA iterations failed to
     # produce trades (random_equities all equal initial_capital). In
