@@ -127,6 +127,11 @@ def run_explore(
         n_rejected=cand.n_rejected,
         final_equity=cand.final_equity,
         spa_p_value=cand.spa_p_value,
+        # spa_naive_p_value: Hansen-literal SPA landed the legacy p here
+        # while spa_p_value now carries the Hansen-corrected p (claim #3).
+        # getattr (not bare attr) -- the MockCandidate/StubCandidate test
+        # stubs only set spa_p_value, so bare attr raises AttributeError.
+        spa_naive_p_value=getattr(cand, "spa_naive_p_value", None),
         narrowed_symbols=cand.narrowed_symbols,
     )
 

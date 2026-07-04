@@ -10,6 +10,7 @@ is propagated through the candidate and used by the WFA engine.
 
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, Optional, Callable
+import numpy as np
 import pandas as pd
 
 from quant_lib.audit import Hypothesis
@@ -110,6 +111,19 @@ class Candidate:
     risk_weights: RiskWeights = field(default_factory=dict)
     reject_reasons: RejectReasons = field(default_factory=dict)
     spa_p_value: float = 1.0
+    # spa_naive_p_value: the legacy circular-permutation SPA p (the value
+    # ``spa_p_value`` carried before the Hansen-literal null landed). When
+    # WFA trial_r_nets are available, ``spa_p_value`` now carries the
+    # Hansen-corrected p and this field preserves the legacy statistic for
+    # transparency/comparison. KEEP ``spa_p_value`` name (~6 consumers:
+    # reporting, cli/_report, cli/explore, __init__.run_explore).
+    spa_naive_p_value: float = 1.0
+    # K Optuna IS PnL arrays (collected from fold_params[*]["trial_r_nets"])
+    # fed to the Hansen-literal SPA null (claim #3 Blocker A). None
+    # sentinels (trials that short-circuited an early return) are filtered
+    # here; arrays are stored as the float lists WFA emitted, re-converted
+    # to np.ndarray only at the portfolio_spa call site.
+    all_trial_r_nets: list = field(default_factory=list)
     edge_metrics: EdgeMetrics = field(default_factory=dict)
 
     # Phase 3: Narrowing
@@ -356,6 +370,17 @@ class Candidate:
             self.all_oos_trades.extend(trades)
             if fold_params:
                 self.fold_params[sym] = fold_params
+                # Aggregate per-fold Optuna IS PnL arrays (the Hansen
+                # null resamples these per-trial loss-differentials). WFA
+                # stored them as float lists (lists keep fold-params dict
+                # equality unambiguous for the reproducibility tests);
+                # portfolio_spa re-``np.asarray``s them. ``None``
+                # sentinels mark trials that short-circuited an early
+                # return and are dropped here.
+                for fd in fold_params:
+                    for arr in fd.get("trial_r_nets", []) or []:
+                        if arr is not None:
+                            self.all_trial_r_nets.append(arr)
             # Phase 2.5: accumulate IS trades for PF allocation. We
             # use a dict keyed by fold_key to keep fold ordering
             # consistent with OOS. ``_is_trades_per_fold_by_sym`` is
@@ -479,7 +504,17 @@ class Candidate:
                  "funding_rate", "is_weekend", "is_funding_hour", "macro_trend"]
             ]
 
-        _, _, p_value = portfolio_spa(
+        # Hansen-literal SPA (claim #3 Blocker A): opt in to the Hansen
+        # null (stationary block bootstrap + Eq.7 recenter + Eq.8 cross-
+        # strategy max-stat) when WFA collected per-trial IS PnL arrays.
+        # trial_r_nets come back from WFA as float lists (to keep fold-
+        # params dict equality unambiguous); re-cast to np.ndarray here.
+        hansen_active = bool(self.all_trial_r_nets) and self.all_trial_r_nets is not None
+        trial_r_nets_arrays = (
+            [np.asarray(arr, dtype=float) for arr in self.all_trial_r_nets]
+            if hansen_active else None
+        )
+        _, _, p_naive, spa_stats = portfolio_spa(
             observed_trades=self.all_oos_trades,
             asset_data=asset_data,
             daily_close_matrix=self.daily_close_matrix,
@@ -499,15 +534,26 @@ class Candidate:
             stress_mult=DEFAULTS["stress_test_multiplier"],
             weekend_penalty=DEFAULTS["weekend_liquidity_penalty"],
             asset_risk_weights=self.risk_weights,
+            trial_r_nets=trial_r_nets_arrays,
+            recenter_policy="hansen_literal",
+            return_statistics=True,
         )
+        # spa_p_value = Hansen-corrected p (NaN-safe fallback to naive);
+        # spa_naive_p_value preserves the legacy circular-permutation p.
+        p_value = spa_stats.get("p_hansen", p_naive) if spa_stats else p_naive
+        hansen_fallback = bool(spa_stats.get("fallback", False)) if spa_stats else True
 
         self.spa_p_value = p_value
+        self.spa_naive_p_value = p_naive
         self.edge_metrics = {
             "n_oos_trades": self.n_oos_trades,
             "n_executed": self.n_executed,
             "n_rejected": self.n_rejected,
             "final_equity": self.final_equity,
             "spa_p_value": p_value,
+            "spa_naive_p_value": p_naive,
+            "spa_joint_k_trials": len(self.all_trial_r_nets) if hansen_active else 0,
+            "hansen_fallback": hansen_fallback,
         }
 
         self._set_stage("edge")
