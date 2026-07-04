@@ -416,7 +416,17 @@ class TestWFAReproducibility:
         """Two runs with the same data + same GLOBAL_SEED must produce
         bit-identical fold_params_list."""
         df = _make_prepped_df(n=5000, seed=42)
-        with patch_wfa_static(min_train_months=3, trials=3, test_months=2):
+        # test_months=1 (not 2) is required for non-vacuity: with hourly
+        # data n=5000 spans only ~7 unique months, and test_months=2
+        # produces zero active folds here (the purge + n_trades<15
+        # guards skip every fold), so params_a == params_b == [] and the
+        # equality assertion passes vacuously -- a deliberate
+        # non-determinism regression (e.g. seeding fold_seed from a
+        # wall clock) would also pass. test_months=1 yields >=1 active
+        # fold on this dataset, making the assertion actually constrain
+        # determinism. (See test_run_wfa_different_seed_changes_fold_params
+        # for the matching non-vacuous pattern, lines 505-509.)
+        with patch_wfa_static(min_train_months=3, trials=3, test_months=1):
             _, params_a, _ = run_wfa_per_symbol(
                 "BTCUSDT", df, use_rvol=True, use_ema=True,
                 verbose=False, strategy_type=0,
@@ -425,7 +435,23 @@ class TestWFAReproducibility:
                 "BTCUSDT", df, use_rvol=True, use_ema=True,
                 verbose=False, strategy_type=0,
             )
-        # If folds were produced, they must be byte-identical.
+        # Both runs must produce folds -- otherwise the equality
+        # assertion below would pass vacuously on two empty lists and
+        # the test would no longer defend claim #4's "same seed -> same
+        # output" direction. Fail loudly if a future data-generation
+        # or config change stops producing folds on this dataset.
+        assert params_a, (
+            "Phase 4.x: this config produced no active folds on the "
+            "synthetic dataset, so the reproducibility assertion below "
+            "is vacuous. Adjust patch_wfa_static (e.g. test_months) or "
+            "_make_prepped_df so at least one fold is produced."
+        )
+        assert params_b, (
+            "Phase 4.x: second run produced no active folds; the "
+            "reproducibility assertion is vacuous without non-empty "
+            "params on both sides."
+        )
+        # Folds were produced on both sides -- they must be byte-identical.
         assert params_a == params_b, (
             f"Phase 4.x: WFA reproducibility broken. Two runs with "
             f"same inputs produced different fold params. "
@@ -436,7 +462,12 @@ class TestWFAReproducibility:
         """Different symbols get distinct ``_sym_seed`` contributions to
         ``fold_seed``, so fold params must differ between symbols."""
         df = _make_prepped_df(n=5000, seed=42)
-        with patch_wfa_static(min_train_months=3, trials=3, test_months=2):
+        # test_months=1 for non-vacuity (same reasoning as the
+        # same-inputs test above): test_months=2 yields zero active
+        # folds here, so the ``if params_btc and params_eth`` guard
+        # would skip the body entirely and the test would pass without
+        # ever checking the symbol-distinctness invariant.
+        with patch_wfa_static(min_train_months=3, trials=3, test_months=1):
             _, params_btc, _ = run_wfa_per_symbol(
                 "BTCUSDT", df, use_rvol=True, use_ema=True,
                 verbose=False, strategy_type=0,
@@ -445,15 +476,25 @@ class TestWFAReproducibility:
                 "ETHUSDT", df, use_rvol=True, use_ema=True,
                 verbose=False, strategy_type=0,
             )
-        # Both should produce fold params (deterministic behavior).
-        # If both produce folds, the params must differ between symbols
+        # Both symbols must produce folds -- otherwise the
+        # distinctness assertion below is unreachable (vacuous skip).
+        assert params_btc, (
+            "Phase 4.x: BTCUSDT run produced no active folds on this "
+            "config; the symbol-distinctness assertion is vacuous "
+            "without non-empty params on both sides."
+        )
+        assert params_eth, (
+            "Phase 4.x: ETHUSDT run produced no active folds on this "
+            "config; the symbol-distinctness assertion is vacuous "
+            "without non-empty params on both sides."
+        )
+        # Both produced folds -- params must differ between symbols
         # (distinct _sym_seed XOR-mixes into fold_seed).
-        if params_btc and params_eth:
-            assert params_btc != params_eth, (
-                "Two symbols with distinct _sym_seed should produce "
-                "distinct fold_params_list -- they share GLOBAL_SEED "
-                "but differ in the symbol char-code sum component."
-            )
+        assert params_btc != params_eth, (
+            "Two symbols with distinct _sym_seed should produce "
+            "distinct fold_params_list -- they share GLOBAL_SEED "
+            "but differ in the symbol char-code sum component."
+        )
 
     def test_run_wfa_fold_params_include_expected_keys(self):
         """Regression guard: fold_params_list must contain the keys
@@ -461,23 +502,32 @@ class TestWFAReproducibility:
         relies on. If a future refactor renames or drops a key,
         this catches it."""
         df = _make_prepped_df(n=5000, seed=42)
-        with patch_wfa_static(min_train_months=3, trials=3, test_months=2):
+        # test_months=1 for non-vacuity: test_months=2 yields zero
+        # active folds here, so the ``if params:`` guard would skip
+        # the key checks entirely and the test would pass without
+        # ever asserting the key contract it exists to protect.
+        with patch_wfa_static(min_train_months=3, trials=3, test_months=1):
             _, params, _ = run_wfa_per_symbol(
                 "BTCUSDT", df, use_rvol=True, use_ema=True,
                 verbose=False, strategy_type=0,
             )
-        if params:
-            first = params[0]
-            for required_key in (
-                "symbol", "fold", "total_folds",
-                "is_start", "oos_start", "oos_end",
-                "best_value",
-                "vol_pct_thresh", "pullback_bars",
-                "trail_atr", "sl_mult",
-            ):
-                assert required_key in first, (
-                    f"fold_params_list entries must include {required_key!r}"
-                )
+        assert params, (
+            "Phase 4.x: this config produced no active folds on the "
+            "synthetic dataset, so the fold-key contract below is never "
+            "checked (vacuous skip). Adjust patch_wfa_static or "
+            "_make_prepped_df so at least one fold is produced."
+        )
+        first = params[0]
+        for required_key in (
+            "symbol", "fold", "total_folds",
+            "is_start", "oos_start", "oos_end",
+            "best_value",
+            "vol_pct_thresh", "pullback_bars",
+            "trail_atr", "sl_mult",
+        ):
+            assert required_key in first, (
+                f"fold_params_list entries must include {required_key!r}"
+            )
 
     def test_run_wfa_different_seed_changes_fold_params(self):
         """Paper claim #4 (determinism): the GLOBAL_SEED parameter MUST be
