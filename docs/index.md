@@ -12,11 +12,26 @@ reproducible research guarantees.
   Every experiment is counted; ablation studies are half-weighted.
 - **Probabilistic Sharpe Ratio** (Bailey & Lopez de Prado 2012): accounts
   for skewness and kurtosis, not just mean/variance.
-- **Superior Predictive Ability** (uniform time-anchored permutation of
-  observed trades + Phipson & Smyth 2010 add-one correction): portfolio-level
-  test. Note: this is not a proper Hansen (2005) stationary-bootstrap null —
-  see [`docs/methodology.md`](methodology.md) §6 for the exact null and its
-  limitations.
+- **Superior Predictive Ability** (two coexisting nulls):
+  - **Legacy** (default, `recenter_policy="legacy"`): uniform
+    time-anchored permutation of observed trades + Phipson & Smyth
+    2010 add-one correction. Stable regression-tested 3-tuple contract;
+    the framework's defence-in-depth against fabricated edge.
+  - **Hansen-literal** (opt-in, `recenter_policy="hansen_literal"` +
+    `trial_r_nets` + `return_statistics=True`): Politis–Romano
+    stationary block bootstrap over per-trial IS loss-differentials
+    + Hansen (2005) Eq.7 recenter/discarding + Eq.8 cross-strategy
+    max-statistic + Phipson-Smyth add-one. The max is the
+    multiple-testing correction (the whole point of White's Reality
+    Check) the legacy path lacks. Numpy-only `pnl_array` resampling,
+    so the SPA spy invariant holds on both paths.
+    Hansen-corrected p exposed as `spa_p_value`; legacy p preserved
+    in `spa_naive_p_value` for transparency. See
+    [`docs/methodology.md`](methodology.md) §6 for the exact null,
+    finite-sample divergences, and the three user-accepted caveats
+    (honest-power may be a negative finding; KS<0.25 finite-sample is
+    empirical-only; spy `2*n_iters` invariant is gated to the legacy
+    path).
 - **Walk-Forward Analysis**: Optuna-based per-symbol optimisation with
   L2 regularization toward search-space center.
 - **Per-fold PF-weighted risk allocation**: decaying halflife weights

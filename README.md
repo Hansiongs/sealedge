@@ -26,10 +26,26 @@ inflated results. quant_lib solves this with:
 - **Multiple-testing correction** — Bonferroni (1-indexed) + FDR (BH)
 - **PSR + ESS** instead of raw Sharpe (accounts for skew/kurtosis,
   autocorrelation)
-- **SPA test** (uniform time-anchored circular permutation of observed
-  trades, with Phipson & Smyth (2010) add-one correction) for final
-  portfolio significance. Note: this is *not* a proper Hansen (2005)
-  SPA stationary-bootstrap null — see `docs/methodology.md`.
+- **SPA test** (two coexisting nulls selectable via `portfolio_spa`
+  kwargs):
+  - **Legacy** (default, `recenter_policy="legacy"`): uniform
+    time-anchored circular permutation of observed trades, with
+    Phipson & Smyth (2010) add-one correction. Stable regression-tested
+    3-tuple contract.
+  - **Hansen-literal** (opt-in, `recenter_policy="hansen_literal"` +
+    `trial_r_nets=...` + `return_statistics=True`): Politis–Romano
+    (1994) stationary block bootstrap over per-trial IS
+    loss-differentials + Hansen (2005) Eq.7 recenter/discarding +
+    Eq.8 cross-strategy max-statistic + Phipson & Smyth add-one.
+    The cross-strategy max is the multiple-testing correction (the
+    whole point of White's Reality Check) that the legacy path lacks.
+    Numpy-only on `pnl_array`s so the SPA spy invariant holds on
+    both paths. Hansen-corrected p is in `spa_p_value`; legacy p is
+    preserved in `spa_naive_p_value` for transparency. See
+    [docs/methodology.md](docs/methodology.md) §6 for the exact
+    null, finite-sample divergences, and the three user-accepted
+    caveats (honest-power may be a negative finding;
+    KS<0.25 is empirical-only; spy gated to legacy path).
 
 See [docs/methodology.md](docs/methodology.md) for the full method
 writeup.
