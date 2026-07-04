@@ -66,6 +66,17 @@ def spa_test(
         Equity from each permutation iteration.
     p_value : float
         SPA p-value (Phipson & Smyth 2010 add-one corrected).
+
+    Notes
+    -----
+    This public alias exposes the LEGACY circular-permutation SPA only
+    (strict 3-tuple, ``return_statistics=False``); the Hansen-literal SPA
+    null (claim #3 Blocker A: stationary block bootstrap + Eq.7 recenter +
+    Eq.8 cross-strategy max-stat) is opt-in via
+    ``quant_lib.core._spa.portfolio_spa(..., trial_r_nets=...,
+    recenter_policy="hansen_literal", return_statistics=True)`` so the
+    public 3-tuple contract -- pinned by ``test_tools_stats.py``'s
+    sentinel identity test -- stays byte-identical.
     """
     if asset_risk_weights is None:
         asset_risk_weights = None  # Let portfolio_spa handle None
