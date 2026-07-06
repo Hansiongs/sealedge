@@ -3,14 +3,14 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "quant_lib"
+name = "sealedge"
 version = "0.5.1"
 description = "Honest backtesting toolkit for quantitative trading strategies with sealed holdout discipline"
 readme = "README.md"
-license = {text = "MIT"}
+license = {text = "GPL-3.0-or-later"}
 requires-python = ">=3.10"
 authors = [
-    {name = "quant_lib contributors"},
+    {name = "Hansen Winarto", email = "hansenwinarto@binus.ac.id"},
 ]
 keywords = [
     "quantitative-finance",
@@ -22,10 +22,9 @@ keywords = [
     "holdout-validation",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
     "Intended Audience :: Financial and Insurance Industry",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -63,9 +62,9 @@ viz = [
 quant_exp = "quant_lib.cli.main:app"
 
 [project.urls]
-Homepage = "https://github.com/Hansiongs/hans-backtest"
-Repository = "https://github.com/Hansiongs/hans-backtest"
-Issues = "https://github.com/Hansiongs/hans-backtest/issues"
+Homepage = "https://github.com/Hansiongs/sealedge"
+Repository = "https://github.com/Hansiongs/sealedge"
+Issues = "https://github.com/Hansiongs/sealedge/issues"
 
 [tool.setuptools.packages.find]
 namespaces = false

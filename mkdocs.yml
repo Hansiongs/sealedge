@@ -1,8 +1,8 @@
-site_name: quant_lib
+site_name: sealedge
 site_description: Honest backtesting for crypto quantitative strategies
 site_url: https://hansiongs.github.io/hans-backtest
-repo_url: https://github.com/Hansiongs/hans-backtest
-repo_name: Hansiongs/hans-backtest
+repo_url: https://github.com/Hansiongs/sealedge
+repo_name: Hansiongs/sealedge
 edit_uri: edit/main/docs/
 
 theme:
@@ -71,6 +71,6 @@ plugins:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/Hansiongs/hans-backtest
+      link: https://github.com/Hansiongs/sealedge
 
-copyright: Copyright &copy; 2026 Hansen Winarto
+copyright: Copyright © 2026 Hansen Winarto

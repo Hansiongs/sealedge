@@ -546,6 +546,40 @@ the post-Phase-4 systematic review. All changes are backward-compatible
   EngineArgs call-site refactor, entry-slip helper, MTM dedup.
   See CHANGELOG v0.4.1 for the deferred list.
 
+### Changed (JSS submission prep) — 2026-07-05
+
+- **License**: MIT → GPL-3.0-or-later (LICENSE file replaced; pyproject.toml
+  classifier updated from `License :: OSI Approved :: MIT License` to
+  `License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)`).
+- **Project identity**: PyPI name `quant_lib` → `sealedge` (pyproject.toml
+  `[project] name`); mkdocs.yml `site_name`/`repo_url`/`repo_name` aligned;
+  README.md top branding synced.
+- **Authors**: `quant_lib contributors` → Hansen Winarto <hansenwinarto@binus.ac.id>.
+- **GitHub URLs**: `Hansiongs/hans-backtest` → `Hansiongs/sealedge` in
+  pyproject.toml `[project.urls]`, mkdocs.yml, README.md CI/Lint badge URLs,
+  and Installation section `git clone` URL.
+- **Development Status**: dropped classifier `Development Status :: 4 - Beta`;
+  no replacement (JSS expects stable without explicit Production claim).
+
+### Internal (preserved for backward-compat)
+
+- Internal Python package name remains `quant_lib` (pyproject.toml
+  `[tool.setuptools.packages.find] include = ["quant_lib*"]`; CLI script
+  `quant_exp = "quant_lib.cli.main:app"`).
+- All `from quant_lib import ...` import statements in README.md,
+  notebooks/, and examples unchanged. After `pip install sealedge`, users
+  continue to `import quant_lib` and call `quant_exp` CLI as before.
+- README.md internal architecture diagram keeps `quant_lib/*` folder
+  references as those are real filesystem paths.
+
+### Deferred to post-paper / pre-submission
+
+- Real PyPI publish of v0.5.2 (or v1.0.0) — placeholder release to be
+  yanked first if any.
+- GitHub Release tag → Zenodo DOI → save in CITATION.cff.
+- CITATION.cff final version with full author affiliation block.
+- `requirements.lock` regeneration if dependency versions changed.
+
 ## [0.5.0] - 2026-06-30
 
 ### Changed (Phase 4: Documentation & infrastructure — v0.5.0)

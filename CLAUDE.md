@@ -15,9 +15,29 @@ Statistical Software (JSS)**. If fully rejected, fallback is
 - Objective: **research software** (locked).
 - Target journal: **JSS** (primary), **e-Informatica** (fallback).
 - License plan: GPL-3.0-or-later for JSS; revert to MIT if fallback.
-- Stage: pre-flight (editor inquiry, experiments, tool comparison).
+- Stage: pre-flight (OJS submission preparation, experiments, tool comparison).
+- **Pre-submission inquiry is NOT endorsed by JSS.** `editor@jstatsoft.org` exists for resource-limited external file cases, not pre-inquiry. Use the OJS step-by-step submission guide instead.
+- **JSS one-shot rule**: rejected manuscripts cannot be resubmitted. Plan must be solid before submit.
+- **Revision deadlines**: 6 months to return revisions, 1 year to bring conditionally accepted paper to final form — else considered withdrawn.
+- **JSS frozen publication**: once published, the JSS copy of source code + article is immutable. Post-publication maintenance (bug fixes, new features) must live outside JSS via GitHub/PyPI. The submitted version is a stable snapshot.
 - Affiliation for any paper draft: BINUS Online Learning,
   Bina Nusantara University, Jakarta, Indonesia.
+- **Submission URL**: https://www.jstatsoft.org/submission (OJS, wajib login). 5 steps: Start → Upload Submission → Enter Metadata → Confirmation → Next Steps. 5 mandatory checklist items: PDF in JSS style, source code, replication materials, GPL-2/3/compatible license, privacy policy. Plus CCAL copyright acknowledgment.
+
+## JSS submission enablers (pre-requisites to actually submit)
+
+These are NOT code quality tasks; they're readiness gates tied to the
+JSS mission and authors page. They must be done before Fase 4 (OJS
+submission). See `roadmap_paper.md` for the full phased plan.
+
+- **License migration**: MIT → GPL-3.0-or-later (currently MIT in `LICENSE` and `pyproject.toml`; both must change). Revert to MIT only if JSS rejects and we fall back to e-Informatica.
+- **PyPI publication**: `sealedge` (rename from `quant_lib`) must be on PyPI, not just GitHub. Currently `pyproject.toml` name is `quant_lib` — rename required.
+- **Formatted help files (Python)**: JSS requires "formatted help files" for environments with library systems. Python equivalent: NumPy/Google-style docstrings + Sphinx autodoc (or mkdocs). Not optional. Existing `mkdocs.yml` is a starting point but needs API reference completeness.
+- **Repo size audit**: total repo + replication bundle must be < 50 MB (JSS upload limit). Dataset fixtures (e.g., `tests/fixtures/btcusdt_1h_2024_jan.csv`) and built site output (`site/`) count. Externalize large data if needed.
+- **Replication script**: one standalone, commented script that reproduces all manuscript results. Target "rough guideline, one hour on a regular PC". If it runs longer, supply a separate "fast" script that reproduces similar results in reasonable time.
+- **Output file**: results from running the replication script, for cross-check by reviewers. Equivalent of R's `knitr::spin` "code.html" — for Python use log file + `pip freeze` + Python version + platform info.
+- **RNG seed**: explicitly initialized in the replication script.
+- **Platform dependencies**: documented in submission.
 
 ## Core paper claims
 
@@ -35,6 +55,22 @@ The framework must defend these four claims in review:
    See `docs/methodology.md §6` for the exact-null spec, four
    paper-disclosed divergences, and three user-accepted caveats.
 4. **Deterministic walk-forward analysis** with reproducible RNG.
+
+**Per-claim software-innovation test (JSS mission gate)**: JSS does
+NOT publish methodological innovations in computational statistics
+— it publishes software contributions. Before submission, each of
+the four claims must be defensible as "substantial software
+innovation wrapping an established method", not novel statistics.
+
+- Claim 1 (HMAC sealed-holdout): software engineering wrapping of
+  cryptographic primitive + standard holdout methodology → safe.
+- Claim 2 (PSR/Deflated-SR): implementation of established method
+  (Bailey & Lopez de Prado 2014) → safe.
+- Claim 3 (SPA + Phipson & Smyth 2010): implementation of
+  established method → safe.
+- Claim 4 (Deterministic WFA): **needs extra scrutiny**. Must be
+  framed as an engineering choice (deterministic computation of an
+  established WFA algorithm), not a novel statistical method.
 
 **Reviewer operating principle**: optimize for "does this claim
 hold?", not "is this code maximally clean?". Cleanup happens after

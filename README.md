@@ -1,17 +1,17 @@
-# quant_lib
+# sealedge
 
 **Honest backtesting toolkit for quantitative trading strategies.**
 
-quant_lib is a Python library for testing whether a trading strategy has a
+sealedge is a Python library for testing whether a trading strategy has a
 genuine statistical edge on historical cryptocurrency data. It enforces
 methodological discipline (no look-ahead, sealed holdouts, multiple-testing
 adjustment) so that reported results can be defended to a skeptical reviewer.
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL_3.0--or--later-blue.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-1325_passing-brightgreen.svg)](.github/workflows/tests.yml)
-[![CI](https://github.com/Hansiongs/hans-backtest/actions/workflows/tests.yml/badge.svg)](.github/workflows/tests.yml)
-[![Lint](https://github.com/Hansiongs/hans-backtest/actions/workflows/lint.yml/badge.svg)](.github/workflows/lint.yml)
+[![CI](https://github.com/Hansiongs/sealedge/actions/workflows/tests.yml/badge.svg)](.github/workflows/tests.yml)
+[![Lint](https://github.com/Hansiongs/sealedge/actions/workflows/lint.yml/badge.svg)](.github/workflows/lint.yml)
 [![Version 0.5.1](https://img.shields.io/badge/version-0.5.1-blue.svg)](CHANGELOG.md)
 
 ## Why quant_lib?
@@ -173,7 +173,7 @@ run_explore("my_strategy")`.
 
 ## Architecture
 
-quant_lib is organized in five layers, with strict dependency
+sealedge is organized in five layers, with strict dependency
 direction (arrows point downward — higher layers may import from
 lower, never the reverse):
 
@@ -287,7 +287,7 @@ quant_lib/
 │   └── workflows/      # CI: tests.yml + lint.yml + mutation.yml
 ├── CHANGELOG.md
 ├── CITATION.cff
-├── LICENSE              # MIT
+├── LICENSE              # GPL-3.0-or-later
 ├── Makefile
 ├── pyproject.toml
 └── README.md
@@ -345,7 +345,7 @@ opaque to coverage tooling.
 
 ```bash
 # Clone the repo
-git clone https://github.com/Hansiongs/hans-backtest.git
+git clone https://github.com/Hansiongs/sealedge.git
 cd quant_lib
 
 # Install with dev dependencies
@@ -357,15 +357,16 @@ pip install -e ".[dev]"
 
 ## Citation
 
-If you use quant_lib in a paper, please cite it as:
+If you use sealedge in a paper, please cite it as:
 
 ```bibtex
-@software{quant_lib,
-  author = {quant_lib contributors},
-  title = {quant_lib: Honest backtesting for crypto strategies},
+@software{sealedge,
+  author = {Winarto, Hansen},
+  title = {sealedge: Honest backtesting toolkit for quantitative trading strategies with sealed holdout discipline},
   version = {0.5.1},
   year = {2026},
-  url = {https://github.com/Hansiongs/hans-backtest}
+  url = {https://github.com/Hansiongs/sealedge},
+  license = {GPL-3.0-or-later}
 }
 ```
 
@@ -374,7 +375,7 @@ citation generation.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+GPL-3.0-or-later — see [LICENSE](LICENSE).
 
 ## Contributing
 
