@@ -201,6 +201,34 @@ def _spa_finalize_return(
     Routing every return path (the 6 early-return guards + the final p-value
     return) through this helper guarantees ``return_statistics`` is honored
     uniformly with no copy-paste drift.
+
+    Parameters
+    ----------
+    equity : float
+        Observed (or fallback) final portfolio equity to be returned as
+        the first element of the result tuple.
+    random_equities : ndarray
+        Per-iteration permuted portfolio equities (``len == n_iters``)
+        used for the p-value computation; returned as the second tuple
+        element.
+    p_value : float
+        SPA p-value (legacy circular-permutation, or NaN/1.0 sentinel
+        on degenerate paths); returned as the third tuple element.
+    return_statistics : bool
+        When True, the 4-tuple shape is returned with the Hansen
+        ``stats`` dict appended; when False, the strict legacy
+        3-tuple is returned.
+    stats : dict or None, optional
+        Hansen statistics payload (populated in Phase 5); only emitted
+        in the 4-tuple path. Defaults to None, which is normalized to
+        ``{}`` when ``return_statistics`` is True.
+
+    Returns
+    -------
+    tuple
+        Either ``(equity, random_equities, p_value)`` when
+        ``return_statistics`` is False, or
+        ``(equity, random_equities, p_value, stats or {})`` when True.
     """
     if return_statistics:
         return equity, random_equities, p_value, stats if stats is not None else {}
@@ -243,6 +271,96 @@ def portfolio_spa(
 
     Tests whether the observed strategy edge is genuine or random,
     using time-anchored circular permutation across all assets.
+
+    Parameters
+    ----------
+    observed_trades : list of dict
+        OOS trade records (formerly the ``pnl_array`` inputs) used as
+        the observed sample; each dict must carry ``entry_time``,
+        ``exit_time``, ``symbol``, ``trade_dir``, ``sl_mult``,
+        ``trail_atr``, ``risk_weight``, ``r_net``. The Hansen-literal
+        path operates numpy-only over ``r_net`` arrays.
+    asset_data : dict
+        Per-symbol OHLCV+ATR+funding DataFrames keyed by symbol;
+        consumed by ``simulate_trailing_stop_trade`` for each
+        permuted entry.
+    daily_close_matrix : dict
+        ``{sym: {date: close}}`` mapping used to pre-compute the
+        correlation cache shared with ``simulate_full_portfolio``.
+    end_date : str
+        ISO date bounding the SPA anchor space; a ``>7d`` gap between
+        ``end_date`` and the earliest asset data end triggers a warning.
+    daily_hl_matrix : dict or None, optional
+        ``{sym: {date: (high, low)}}`` matrix passed through to
+        ``simulate_full_portfolio``; ``None`` is allowed.
+    n_iters : int
+        Number of bootstrap/permutation iterations ``B``; also the
+        Hansen bootstrap iteration count when ``recenter_policy ==
+        "hansen_literal"``.
+    initial_capital : float
+        Starting equity for both the observed and permuted portfolios;
+        returned unchanged for empty-portfolio degenerate paths.
+    leverage : float
+        Portfolio leverage multiplier forwarded to the simulation.
+    mm_pct : float
+        Maintenance-margin percentage forwarded to ``simulate_full_portfolio``.
+    position_limit : int
+        Maximum number of concurrent positions in the portfolio simulator.
+    cb_hard_cooldown_hours : int
+        Circuit-breaker hard-cooldown window in hours; passed to
+        ``simulate_full_portfolio``.
+    fixed_cb_threshold : float
+        Fixed circuit-breaker drawdown threshold; passed to
+        ``simulate_full_portfolio``.
+    rng_seed : int
+        Seed for ``np.random.default_rng``; ``rng_seed + 1`` is used
+        as a fresh generator for the Hansen-literal path so the legacy
+        ``rng_spa`` distribution (and the spy invariant) is preserved.
+    verbose : bool
+        When True, prints ``SPA progress`` lines every ~10% of iterations.
+    liquidation_fee_pct : float
+        Liquidation fee percentage forwarded to ``simulate_full_portfolio``.
+    fee_taker : float
+        Taker fee rate forwarded to ``simulate_trailing_stop_trade``.
+    stress_mult : float
+        Stress-test cost multiplier; mirrors
+        ``DEFAULTS["stress_test_multiplier"]`` so direct SPA callers
+        share the WFA cost model.
+    weekend_penalty : float
+        Weekend liquidity penalty applied in ``simulate_trailing_stop_trade``;
+        mirrors ``DEFAULTS["weekend_liquidity_penalty"]``.
+    asset_risk_weights : dict or None, optional
+        ``{sym: risk_weight}`` overrides forwarded to
+        ``simulate_full_portfolio``; ``None`` disables per-asset CB
+        weighting.
+    trial_r_nets : list of ndarray or None, optional
+        K Optuna IS-trial PnL arrays (None entries are filtered out)
+        consumed by the Hansen-literal path; the cross-strategy
+        max-statistic (Eq.8) is computed across these. ``None`` keeps
+        the legacy 3-tuple contract byte-identical.
+    recenter_policy : str
+        ``"legacy"`` (default) for the original circular-permutation
+        SPA, or ``"hansen_literal"`` to opt into the Politis-Romano
+        stationary block bootstrap + Hansen Eq.7 recenter/discarding
+        + Eq.8 cross-strategy max-statistic null. Only active when
+        combined with non-empty ``trial_r_nets`` and
+        ``return_statistics=True``.
+    return_statistics : bool
+        When False (default) returns the strict 3-tuple
+        ``(equity, random_equities, p_value)`` every legacy caller
+        pins; when True returns the 4-tuple with a Hansen
+        statistics dict as the 4th element.
+
+    Returns
+    -------
+    tuple
+        ``(equity, random_equities, p_value)`` when ``return_statistics``
+        is False, or ``(equity, random_equities, p_value, stats)`` when
+        ``return_statistics`` is True. ``stats`` is the Hansen
+        statistics dict on the opt-in path, or ``{}`` otherwise.
+        ``p_value`` is the legacy circular-permutation p (preserved
+        by the 3-tuple contract); the Hansen-corrected p lives in
+        ``stats["p_hansen"]`` when populated.
 
     Notes
     -----

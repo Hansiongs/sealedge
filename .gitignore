@@ -53,3 +53,6 @@ Thumbs.db
 # Claude
 .claude/
 CLAUDE.md
+
+# Built documentation site (mkdocs output)
+site/

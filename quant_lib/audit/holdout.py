@@ -115,6 +115,10 @@ def get_hmac_secret() -> bytes:
 def _reset_hmac_secret_cache() -> None:
     """Clear the cached HMAC secret. Used by tests to switch secrets
     within a single process. Production code does not need this.
+
+    Returns
+    -------
+    None
     """
     if hasattr(get_hmac_secret, "_cached"):
         delattr(get_hmac_secret, "_cached")
@@ -205,6 +209,25 @@ class HoldoutSeal:
     The dataclass does NOT include ``seal_file`` in its signed
     payload -- ``seal_file`` is a path on the local filesystem and
     not part of the integrity contract.
+
+    Attributes
+    ----------
+    start : str
+        Start date (YYYY-MM-DD) of the holdout window.
+    end : str
+        End date (YYYY-MM-DD) of the holdout window.
+    sealed_at : str or None
+        ISO 8601 timestamp when the seal was applied; ``None`` if not
+        yet sealed.
+    broken_at : str or None
+        ISO 8601 timestamp when the seal was broken; ``None`` while
+        still sealed.
+    data_hash : str or None
+        SHA256 hex digest of the holdout raw data (no-peek guarantee).
+    signature : str or None
+        HMAC-SHA256 signature of the seal state (excludes ``seal_file``).
+    seal_file : str or None
+        On-disk path of the seal JSON; not part of the integrity contract.
     """
     start: str
     end: str
@@ -221,6 +244,12 @@ class HoldoutSeal:
         callers that want to write a signed seal use ``to_dict()``
         to get the unsigned payload, then add the signature field
         explicitly (see ``_save_seal``).
+
+        Returns
+        -------
+        dict
+            JSON-friendly mapping of the seal state. The ``signature``
+            key is included only when ``self.signature`` is not None.
         """
         d = {
             "start": self.start,
@@ -235,7 +264,21 @@ class HoldoutSeal:
 
     @staticmethod
     def from_dict(d: dict) -> "HoldoutSeal":
-        """Reconstruct from a JSON dict (with or without signature)."""
+        """Reconstruct from a JSON dict (with or without signature).
+
+        Parameters
+        ----------
+        d : dict
+            JSON-decoded seal state mapping. ``start`` and ``end`` are
+            required; all other fields are optional and default to None.
+
+        Returns
+        -------
+        HoldoutSeal
+            Reconstructed seal instance whose ``seal_file`` field is
+            populated from ``d.get("seal_file")`` (the on-disk path,
+            not part of the integrity contract).
+        """
         return HoldoutSeal(
             start=d["start"],
             end=d["end"],
@@ -362,11 +405,25 @@ class HoldoutSet:
         self._tampered = False
 
     def is_sealed(self) -> bool:
-        """Check if the holdout is currently sealed."""
+        """Check if the holdout is currently sealed.
+
+        Returns
+        -------
+        bool
+            True if a seal timestamp is recorded and no break timestamp
+            has been written yet; False otherwise.
+        """
         return self._seal.sealed_at is not None and self._seal.broken_at is None
 
     def is_broken(self) -> bool:
-        """Check if the holdout has already been used."""
+        """Check if the holdout has already been used.
+
+        Returns
+        -------
+        bool
+            True if ``broken_at`` has been set (one-shot holdout has
+            been irreversibly consumed); False otherwise.
+        """
         return self._seal.broken_at is not None
 
     def verify(self) -> bool:
@@ -488,11 +545,27 @@ class HoldoutSet:
         return was_intact, hash_before, real_data_hash
 
     def boundary(self) -> tuple:
-        """Return the (start, end) boundary of this holdout."""
+        """Return the (start, end) boundary of this holdout.
+
+        Returns
+        -------
+        tuple
+            ``(start, end)`` ISO date strings taken from the underlying
+            ``HoldoutSeal`` record.
+        """
         return (self._seal.start, self._seal.end)
 
     def summary(self) -> str:
-        """Return human-readable status."""
+        """Return human-readable status.
+
+        Returns
+        -------
+        str
+            Multi-line summary describing the holdout name, current
+            state (``SEALED``/``BROKEN``/``UNSEALED``), period, sealing
+            and breaking timestamps, truncated signature, and any
+            tamper-detected indicator.
+        """
         status = "BROKEN" if self.is_broken() else ("SEALED" if self.is_sealed() else "UNSEALED")
         parts = [
             f"Holdout: {self.name} ({status})",
@@ -523,6 +596,10 @@ class HoldoutSet:
         used direct ``open()`` which could produce a half-written
         JSON on crash, causing verify() to fail despite no actual
         tampering.
+
+        Returns
+        -------
+        None
         """
         if self._seal.seal_file:
             payload = self._seal.to_dict()
