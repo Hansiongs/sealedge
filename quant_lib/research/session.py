@@ -146,7 +146,30 @@ def _compute_holdout_data_hash(
 
 @dataclass
 class SessionCommitRecord:
-    """Record of a single commit (for audit trail)."""
+    """Record of a single commit (for audit trail).
+
+    Attributes
+    ----------
+    candidate_name : str
+        Name of the candidate that was committed.
+    timestamp : str
+        ISO 8601 timestamp (truncated to seconds) of when the commit
+        was recorded.
+    final_equity : float
+        Final equity value at the end of the holdout phase.
+    equity_pct : float
+        Equity expressed as a percentage of initial capital.
+    n_trades : int
+        Number of trades executed during the holdout phase.
+    psr : float
+        Probabilistic Sharpe Ratio of the commit (claim #2 statistic).
+    seal_hash : str
+        SHA256 hex digest identifying the holdout seal under which
+        the commit was recorded.
+    success_criteria_text : str
+        Free-form text describing the success criteria used to evaluate
+        this commit (recorded verbatim from the hypothesis).
+    """
     candidate_name: str
     timestamp: str
     final_equity: float
@@ -537,11 +560,29 @@ class ResearchSession:
         Computed as ``bonferroni_base / (n_commits + 1)``, i.e. 1-indexed
         (the next commit is treated as the (n+1)-th test). Use this
         when committing to decide the rejection threshold.
+
+        Returns
+        -------
+        float
+            The Bonferroni-adjusted alpha for the next commit, equal
+            to ``bonferroni_base / max(n_commits + 1, 1)``.
         """
         return self.bonferroni_base / max(self.n_commits + 1, 1)
 
     def adjusted_alpha_for_commit(self, commit_idx: int) -> float:
-        """Bonferroni alpha for a specific commit (1-indexed)."""
+        """Bonferroni alpha for a specific commit (1-indexed).
+
+        Parameters
+        ----------
+        commit_idx : int
+            1-indexed commit position used to compute
+            ``bonferroni_base / max(commit_idx, 1)``.
+
+        Returns
+        -------
+        float
+            Bonferroni-adjusted alpha for the given commit index.
+        """
         return self.bonferroni_base / max(commit_idx, 1)
 
     def record_commit(
@@ -554,7 +595,31 @@ class ResearchSession:
         seal_hash: str,
         success_criteria_text: str,
     ) -> None:
-        """Record a commit (called by commit_to_holdout)."""
+        """Record a commit (called by commit_to_holdout).
+
+        Parameters
+        ----------
+        candidate : Candidate
+            The committed candidate; its ``hypothesis.name`` is used
+            to label the ``SessionCommitRecord``.
+        final_equity : float
+            Final equity value at commit time.
+        equity_pct : float
+            Equity as a percentage of initial capital.
+        n_trades : int
+            Number of trades executed during the holdout phase.
+        psr : float
+            Probabilistic Sharpe Ratio of the commit.
+        seal_hash : str
+            SHA256 hex digest identifying the holdout seal.
+        success_criteria_text : str
+            Free-form success criteria text, recorded verbatim on the
+            ``SessionCommitRecord``.
+
+        Returns
+        -------
+        None
+        """
         record = SessionCommitRecord(
             candidate_name=candidate.hypothesis.name,
             timestamp=datetime.now(timezone.utc).isoformat()[:19],
@@ -572,7 +637,16 @@ class ResearchSession:
     # ──────────────────────────────────────────────────────────────────
 
     def summary(self) -> str:
-        """Human-readable session state."""
+        """Human-readable session state.
+
+        Returns
+        -------
+        str
+            Single-line ``ResearchSession(...)`` summary covering the
+            training/holdout period, candidate and commit counts, the
+            current Bonferroni and FDR alphas, and the holdout state
+            (``SEALED``/``BROKEN``).
+        """
         return (
             f"ResearchSession("
             f"train={self.training_period[0]}->{self.training_period[1]}, "

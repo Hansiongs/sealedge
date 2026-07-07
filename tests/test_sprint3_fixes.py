@@ -469,11 +469,15 @@ class TestExploreResultDataclass:
             final_equity=1100.0, spa_p_value=0.123, narrowed_symbols=["BTCUSDT"],
         )
         keys = list(r.keys())
+        # Order: positional (non-default) fields first, then spa_naive_p_value
+        # last (default=None; Phase 6 added for Hansen-literal SPA null,
+        # claim #3 Blocker A). Pinned to 8 fields.
         assert keys == [
             "experiment", "n_oos_trades", "n_executed", "n_rejected",
             "final_equity", "spa_p_value", "narrowed_symbols",
+            "spa_naive_p_value",
         ]
-        assert len(r) == 7
+        assert len(r) == 8
         assert "spa_p_value" in r
         assert "nope" not in r
         # get() with default

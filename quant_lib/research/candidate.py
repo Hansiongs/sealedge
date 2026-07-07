@@ -1,15 +1,22 @@
-"""
-Candidate: per-hypothesis state in a ResearchSession.
+"""Candidate: per-hypothesis state in a ResearchSession.
 
 Each candidate represents one hypothesis attempt. It tracks the
 state machine: hypothesis -> universe -> edge -> narrowed -> ready.
 
 Per-hypothesis config (search_space, static_overrides, strategy_params)
 is propagated through the candidate and used by the WFA engine.
+
+Notes
+-----
+This module contains the :class:`Candidate` class plus its narrowing
+helpers and stage-transition guards. The orchestration that drives
+a candidate through the workflow lives in
+:mod:`quant_lib.research.session`.
 """
 
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, Optional, Callable
+import numpy as np
 import pandas as pd
 
 from quant_lib.audit import Hypothesis
@@ -84,6 +91,12 @@ class Candidate:
     Each stage produces data consumed by the next. Once `ready`,
     the candidate can be committed to the holdout via
     `commit_to_holdout(candidate)`.
+
+    Notes
+    -----
+    Public attributes are documented on the dataclass field
+    declarations below; see the class schema for the full attribute
+    listing.
     """
 
     hypothesis: Hypothesis
@@ -110,6 +123,19 @@ class Candidate:
     risk_weights: RiskWeights = field(default_factory=dict)
     reject_reasons: RejectReasons = field(default_factory=dict)
     spa_p_value: float = 1.0
+    # spa_naive_p_value: the legacy circular-permutation SPA p (the value
+    # ``spa_p_value`` carried before the Hansen-literal null landed). When
+    # WFA trial_r_nets are available, ``spa_p_value`` now carries the
+    # Hansen-corrected p and this field preserves the legacy statistic for
+    # transparency/comparison. KEEP ``spa_p_value`` name (~6 consumers:
+    # reporting, cli/_report, cli/explore, __init__.run_explore).
+    spa_naive_p_value: float = 1.0
+    # K Optuna IS PnL arrays (collected from fold_params[*]["trial_r_nets"])
+    # fed to the Hansen-literal SPA null (claim #3 Blocker A). None
+    # sentinels (trials that short-circuited an early return) are filtered
+    # here; arrays are stored as the float lists WFA emitted, re-converted
+    # to np.ndarray only at the portfolio_spa call site.
+    all_trial_r_nets: list = field(default_factory=list)
     edge_metrics: EdgeMetrics = field(default_factory=dict)
 
     # Phase 3: Narrowing
@@ -144,7 +170,19 @@ class Candidate:
     # ──────────────────────────────────────────────────────────────────
 
     def _assert_stage_at_least(self, required: CandidateStage) -> None:
-        """Raise if current stage is before required."""
+        """Raise if current stage is before required.
+
+    Parameters
+    ----------
+    required : CandidateStage
+        The minimum stage the candidate must have reached. Stages
+        follow the canonical order
+        ``hypothesis < universe < edge < narrowed < ready``.
+
+    Returns
+    -------
+    None
+    """
         order = ["hypothesis", "universe", "edge", "narrowed", "ready"]
         cur_idx = order.index(self.stage)
         req_idx = order.index(required)
@@ -156,7 +194,21 @@ class Candidate:
             )
 
     def _set_stage(self, new_stage: CandidateStage) -> None:
-        """Transition to new stage with validation."""
+        """Transition to new stage with validation.
+
+    Parameters
+    ----------
+    new_stage : CandidateStage
+        The stage to transition into. The transition is validated
+        against the canonical state-machine order
+        (``hypothesis -> universe -> edge -> narrowed -> ready``).
+        Forward-only transitions are permitted; same-stage and
+        backwards transitions raise.
+
+    Returns
+    -------
+    None
+    """
         order = ["hypothesis", "universe", "edge", "narrowed", "ready"]
         cur_idx = order.index(self.stage)
         new_idx = order.index(new_stage)
@@ -187,6 +239,19 @@ class Candidate:
         - Selects eligible symbols (volume + age criteria)
         - Computes all features (leakage-aware, with strategy_type dispatch)
         - Caches per-asset data and precomputed features
+
+        Parameters
+        ----------
+        min_volume_usdt : float, optional
+            Minimum median daily volume in USDT over the 90-day lookback
+            before the training start date. Default ``50_000_000.0``.
+        min_age_days : int, optional
+            Minimum number of days the symbol must have been listed
+            before the training start date. Default ``180``.
+
+        Returns
+        -------
+        None
         """
         if self.stage != "hypothesis":
             raise InvalidStageTransition(
@@ -279,6 +344,27 @@ class Candidate:
         No strategy performance involved -- this is the Phase 1 selection
         stage. Point-in-time only: we look at data available at start_dt,
         not at the future.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            OHLCV frame for one symbol. Must include a datetime index
+            and volume column.
+        start_dt : pd.Timestamp
+            Reference point-in-time date. The filter uses data strictly
+            at-or-before this timestamp.
+        min_volume_usdt : float
+            Minimum median daily USDT volume threshold over the lookback
+            window. Symbol fails filter if median volume is below this.
+        min_age_days : int
+            Minimum number of days between the first available bar and
+            ``start_dt``. Symbol fails filter if younger than this.
+
+        Returns
+        -------
+        bool
+            ``True`` if the symbol passes both age and volume criteria,
+            ``False`` otherwise.
         """
         if df is None or len(df) == 0:
             return False
@@ -319,6 +405,21 @@ class Candidate:
         """Phase 2: WFA per symbol, portfolio sim, SPA.
 
         Returns edge_metrics dict.
+
+        Parameters
+        ----------
+        n_spa_iters : int, optional
+            Number of SPA (Stationary Bootstrap) iterations. Default ``2000``.
+        use_rvol : bool, optional
+            Whether to include realized-volatility features. Default ``True``.
+        use_ema : bool, optional
+            Whether to include EMA-based features. Default ``True``.
+
+        Returns
+        -------
+        dict
+            ``edge_metrics`` dict with per-symbol WFA outcomes, portfolio
+            simulation results, and the SPA p-value summary.
         """
         self._assert_stage_at_least("universe")
 
@@ -356,6 +457,17 @@ class Candidate:
             self.all_oos_trades.extend(trades)
             if fold_params:
                 self.fold_params[sym] = fold_params
+                # Aggregate per-fold Optuna IS PnL arrays (the Hansen
+                # null resamples these per-trial loss-differentials). WFA
+                # stored them as float lists (lists keep fold-params dict
+                # equality unambiguous for the reproducibility tests);
+                # portfolio_spa re-``np.asarray``s them. ``None``
+                # sentinels mark trials that short-circuited an early
+                # return and are dropped here.
+                for fd in fold_params:
+                    for arr in fd.get("trial_r_nets", []) or []:
+                        if arr is not None:
+                            self.all_trial_r_nets.append(arr)
             # Phase 2.5: accumulate IS trades for PF allocation. We
             # use a dict keyed by fold_key to keep fold ordering
             # consistent with OOS. ``_is_trades_per_fold_by_sym`` is
@@ -479,7 +591,17 @@ class Candidate:
                  "funding_rate", "is_weekend", "is_funding_hour", "macro_trend"]
             ]
 
-        _, _, p_value = portfolio_spa(
+        # Hansen-literal SPA (claim #3 Blocker A): opt in to the Hansen
+        # null (stationary block bootstrap + Eq.7 recenter + Eq.8 cross-
+        # strategy max-stat) when WFA collected per-trial IS PnL arrays.
+        # trial_r_nets come back from WFA as float lists (to keep fold-
+        # params dict equality unambiguous); re-cast to np.ndarray here.
+        hansen_active = bool(self.all_trial_r_nets) and self.all_trial_r_nets is not None
+        trial_r_nets_arrays = (
+            [np.asarray(arr, dtype=float) for arr in self.all_trial_r_nets]
+            if hansen_active else None
+        )
+        _, _, p_naive, spa_stats = portfolio_spa(
             observed_trades=self.all_oos_trades,
             asset_data=asset_data,
             daily_close_matrix=self.daily_close_matrix,
@@ -499,15 +621,26 @@ class Candidate:
             stress_mult=DEFAULTS["stress_test_multiplier"],
             weekend_penalty=DEFAULTS["weekend_liquidity_penalty"],
             asset_risk_weights=self.risk_weights,
+            trial_r_nets=trial_r_nets_arrays,
+            recenter_policy="hansen_literal",
+            return_statistics=True,
         )
+        # spa_p_value = Hansen-corrected p (NaN-safe fallback to naive);
+        # spa_naive_p_value preserves the legacy circular-permutation p.
+        p_value = spa_stats.get("p_hansen", p_naive) if spa_stats else p_naive
+        hansen_fallback = bool(spa_stats.get("fallback", False)) if spa_stats else True
 
         self.spa_p_value = p_value
+        self.spa_naive_p_value = p_naive
         self.edge_metrics = {
             "n_oos_trades": self.n_oos_trades,
             "n_executed": self.n_executed,
             "n_rejected": self.n_rejected,
             "final_equity": self.final_equity,
             "spa_p_value": p_value,
+            "spa_naive_p_value": p_naive,
+            "spa_joint_k_trials": len(self.all_trial_r_nets) if hansen_active else 0,
+            "hansen_fallback": hansen_fallback,
         }
 
         self._set_stage("edge")
@@ -533,6 +666,18 @@ class Candidate:
         """Phase 3: apply narrowing rule (context-aware from Phase 2).
 
         If no rule provided: keep full universe (broad-weak default).
+
+        Parameters
+        ----------
+        rule : Optional[Callable], optional
+            Callable that takes a single candidate and mutates
+            ``narrowed_symbols`` in place (or returns a set of symbols
+            to keep). If ``None``, the full eligible universe is kept.
+            Default ``None``.
+
+        Returns
+        -------
+        None
         """
         self._assert_stage_at_least("edge")
 
@@ -584,6 +729,13 @@ class Candidate:
         which validates that narrowing and frozen params are populated.
         This prevents accidental commits on candidates that haven't been
         finalized.
+
+        Returns
+        -------
+        bool
+            ``True`` if the candidate is in the ``ready`` stage with
+            non-empty ``narrowed_symbols`` and ``frozen_params``;
+            ``False`` otherwise.
         """
         return (
             self.stage == "ready"
@@ -604,6 +756,10 @@ class Candidate:
         creates a Candidate outside the normal flow (e.g. bypassing
         ``run_edge_testing``) is caught early rather than failing at
         commit time.
+
+        Returns
+        -------
+        None
         """
         if self.stage == "ready":
             return
@@ -667,6 +823,10 @@ class Candidate:
         Note: this only validates preconditions (narrowed + has data).
         To actually commit, call :meth:`mark_ready` first to transition
         into the terminal 'ready' stage.
+
+        Returns
+        -------
+        None
         """
         if not self.narrowed_symbols:
             raise NotReadyForCommit(

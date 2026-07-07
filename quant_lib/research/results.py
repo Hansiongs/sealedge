@@ -47,14 +47,15 @@ class ExploreResult:
     True
     >>> list(r.keys())
     ['experiment', 'n_oos_trades', 'n_executed', 'n_rejected',
-     'final_equity', 'spa_p_value', 'narrowed_symbols']
+     'final_equity', 'spa_p_value', 'narrowed_symbols',
+     'spa_naive_p_value']
 
     Iteration and unpacking:
 
     >>> for key, value in r.items():
     ...     print(f"{key} = {value}")
     >>> len(r)
-    7
+    8
     """
 
     experiment: str
@@ -64,6 +65,16 @@ class ExploreResult:
     final_equity: float
     spa_p_value: float
     narrowed_symbols: list[str]
+    # spa_naive_p_value: the legacy circular-permutation SPA p. When WFA
+    # trial_r_nets are available, spa_p_value carries the Hansen-corrected
+    # p (claim #3 Blocker A); this field preserves the legacy statistic.
+    # ``getattr(..., None)`` in run_explore keeps the MockCandidate/
+    # StubCandidate test stubs (which set only spa_p_value) green.
+    # Declared LAST (after the non-default narrowed_symbols) to satisfy
+    # the dataclass rule "non-default follows non-default"; its keyword
+    # default (None) makes it optional for all existing positional/keyword
+    # constructors.
+    spa_naive_p_value: float | None = None
 
     # ------------------------------------------------------------------
     # Dict-style backward compat (Sprint 3 fix 3.3)

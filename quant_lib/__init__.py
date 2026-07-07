@@ -40,6 +40,13 @@ def __getattr__(name: str):
 
     Also resolves ``ExploreResult`` (Sprint 3 fix 3.3) without forcing
     the research submodule to load.
+
+    Parameters
+    ----------
+    name : str
+        Attribute name being accessed; one of the lazy submodule names
+        (``tools``, ``audit``, ``core``, ``research``) or the lazily
+        resolved dataclass names (``ExploreResult``, ``CommitResult``).
     """
     if name in _LAZY_MODULES:
         import importlib
@@ -77,6 +84,21 @@ def _build_candidate_for_explore(experiment_name, cache_dir):
     ``quant_exp explore`` command. This wrapper exists so the public
     API surface (``from quant_lib import _build_candidate_for_explore``)
     is unchanged from before Sprint 3.
+
+    Parameters
+    ----------
+    experiment_name : str
+        Name of a registered experiment (see ``quant_exp list``);
+        forwarded to ``build_explore_candidate``.
+    cache_dir : str
+        Directory for cached data; forwarded to
+        ``build_explore_candidate``.
+
+    Returns
+    -------
+    Candidate
+        The Candidate constructed for the explore phase; identical
+        object returned by ``build_explore_candidate``.
     """
     from quant_lib.research._pipeline import build_explore_candidate
     return build_explore_candidate(experiment_name, cache_dir)
@@ -127,6 +149,11 @@ def run_explore(
         n_rejected=cand.n_rejected,
         final_equity=cand.final_equity,
         spa_p_value=cand.spa_p_value,
+        # spa_naive_p_value: Hansen-literal SPA landed the legacy p here
+        # while spa_p_value now carries the Hansen-corrected p (claim #3).
+        # getattr (not bare attr) -- the MockCandidate/StubCandidate test
+        # stubs only set spa_p_value, so bare attr raises AttributeError.
+        spa_naive_p_value=getattr(cand, "spa_naive_p_value", None),
         narrowed_symbols=cand.narrowed_symbols,
     )
 

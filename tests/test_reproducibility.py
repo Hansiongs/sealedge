@@ -223,7 +223,7 @@ class TestBootstrapDeterminism:
 class TestSPADeterminism:
     """portfolio_spa uses internal RNG seeded with rng_seed parameter.
 
-    Same seed -> same p-value (Davé 2008 corrected).
+    Same seed -> same p-value (Phipson & Smyth 2010 add-one corrected).
     """
 
     @pytest.fixture

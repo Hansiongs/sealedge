@@ -92,8 +92,21 @@ class WalkForwardObjective:
         else:
             self.bar_weights = np.ones(n_bars, dtype=np.float64)
 
+        # Hansen-literal SPA support (claim #3 Blocker A): collect the IS
+        # PnL array of every Optuna trial in this fold so the SPA null can
+        # resample per-trial loss-differentials (Hansen 2005 Eq.6-8). A
+        # ``None`` sentinel marks trials that short-circuited an early
+        # return (len df_p < 168, n_trades < 15, w_var <= 0) so the list
+        # length always equals ``n_trials`` regardless of which branch the
+        # trial took; the Hansen helper filters sentinels out. A fresh
+        # ``WalkForwardObjective`` instance is built per fold (call site
+        # ``run_wfa_per_symbol`` L577), so per-fold isolation is by
+        # construction -- no cross-fold reset needed.
+        self.trial_r_nets: list = []
+
     def __call__(self, trial: optuna.trial.Trial) -> float:
         if len(self.df_p) < 168:
+            self.trial_r_nets.append(None)
             return -9999.0
 
         ss = self.search_space
@@ -176,11 +189,12 @@ class WalkForwardObjective:
             DEFAULTS["trend_aligned_risk_mult"],
             DEFAULTS["trend_counter_risk_mult"],
         )
-        pnl_array = result[0]
+        pnl_array = np.asarray(result[0], dtype=float)
         idx_entry = result[1]
 
         n_trades = len(pnl_array)
         if n_trades < 15:
+            self.trial_r_nets.append(None)
             return -9999.0
 
         trade_w = self.bar_weights[idx_entry]
@@ -189,6 +203,7 @@ class WalkForwardObjective:
         w_mean = float(np.dot(pnl_array, trade_w))
         w_var = float(np.dot(trade_w, (pnl_array - w_mean) ** 2))
         if w_var <= 0:
+            self.trial_r_nets.append(None)
             return -9999.0
         w_sr = w_mean / np.sqrt(w_var)
 
@@ -250,6 +265,11 @@ class WalkForwardObjective:
             l2_penalty = self.reg_lambda * l2_terms
             obj -= l2_penalty
 
+        # Record this trial's IS PnL array for the Hansen-literal SPA null.
+        # Reached only on the success path (past the 3 early-return guards
+        # above all appended ``None`` sentinels). Downsampling not needed:
+        # every entry is the per-trial candidate's IS PnL stream.
+        self.trial_r_nets.append(pnl_array)
         return obj
 
 
@@ -618,6 +638,18 @@ def run_wfa_per_symbol(
             "oos_end": oos_end,
             "best_value": study.best_value,
             **best_p,
+            # IS PnL array per Optuna trial in this fold (None sentinels for
+            # trials that short-circuited an early return). Consumed by the
+            # Hansen-literal SPA null (claim #3) via candidate aggregation.
+            # Stored as ``.tolist()`` (JSON-friendly lists of float) so the
+            # WFA reproducibility tests' ``params_a == params_b`` dict
+            # equality on fold_params stays unambiguous -- comparing
+            # numpy arrays raises "truth value of array is ambiguous".
+            # The Hansen helper re-``np.asarray``s on read.
+            "trial_r_nets": [
+                arr.tolist() if arr is not None else None
+                for arr in wf_obj.trial_r_nets
+            ],
         })
 
         rng_oos = np.random.default_rng(fold_seed ^ 0xABCD)

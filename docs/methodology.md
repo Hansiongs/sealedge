@@ -292,20 +292,70 @@ Deflated Sharpe Ratio."
 
 ### SPA (Superior Predictive Ability)
 
-`core/_spa.py:20-265`. Tests whether the observed strategy edge
-is genuine or random, using time-anchored circular permutation.
+`core/_spa.py:20-560`. Tests whether the observed strategy edge is
+genuine or random. **Two coexisting null distributions** selectable via
+the public API:
 
-- Bootstrap the null distribution by permuting trade entry times
-- Compare observed equity against the null
-- Compute Phipson-Bell (2010) corrected p-value (the standard
-  add-one correction for permutation tests; attribution corrected
-  from prior "Davé (2008)" label, see `core/_spa.py:297-303`):
-  ```
-  p = (n_exceed + 1) / (n_iters + 1)
-  ```
+* **Legacy path** (`recenter_policy="legacy"`, default): uniform
+  time-anchored circular permutation of observed trades across all
+  assets. Preserves cross-asset co-occurrence structure (all observed
+  trades share a single random anchor offset per iteration, so relative
+  timing between assets is unchanged). Phipson & Smyth (2010) add-one
+  correction ``p = (n_exceed + 1) / (n_iters + 1)``. The framework's
+  defence-in-depth: this is the **stable, regression-tested** null that
+  every legacy 3-tuple caller pins.
 
-References: Hansen (2005), "A Test for Superior Predictive Ability";
-Phipson & Smyth (2010), "Permutation P-values Should Never Be Zero".
+* **Hansen-literal path** (opt-in via
+  `recenter_policy="hansen_literal"` + `trial_r_nets` +
+  `return_statistics=True`): Politis & Romano (1994) stationary block
+  bootstrap over the per-trial IS loss-differentials
+  ``d_k = -r_net_k`` (one ``pnl_array`` per Optuna trial collected by
+  `core/_wfa.py:WalkForwardObjective`), Hansen (2005) Eq.7 recenter
+  with nuisance-parameter discarding ``Ā_k_trunc = Ā_k * 1{Ā_k ≥ 0}``,
+  Eq.8 cross-strategy maximum statistic ``T_null_max = max_k T_acc^k_b``,
+  and the Phipson-Smyth add-one. The cross-strategy max is the
+  multiple-testing correction — the entire point of White's Reality
+  Check — that the legacy circular-permutation test lacks. The Hansen
+  block operates numpy-only on `pnl_array`s (no
+  `simulate_trailing_stop_trade` / `simulate_full_portfolio` calls),
+  preserving the SPA spy invariant on BOTH paths.
+
+Disclosed finite-sample divergences from a strict Hansen reading
+(do NOT silently rescale or "fix" these — they are paper-disclosed):
+
+1. **Block length** uses Politis & Romano ``p = max(1, round(n_k^(1/3)))``
+   per trial (collected at runtime) unless
+   `STATIC["spa_hansen_block_length_override"] > 0` forces a fixed
+   value. No automatic Patton-Politis-White selection (overkill +
+   destabilizes max-stat in finite sample).
+2. **Sample-size rescale**: Hansen assumes a common evaluation window
+   ``n_k = N`` for every strategy. Optuna trial folds vary in `n_k`. We
+   do NOT add a `√(N/n_k)` rescale — this is paper-disclosed and
+   consistent with Hansen's per-strategy bootstrap.
+3. **Two-stage q bootstrap** (Hansen 2005 §3) is omitted. The Eq.8
+   max-stat + Eq.7 recenter is the data-snooping test the framework
+   needs; the spurious-rejection region refinement is future work.
+4. **Empirical-only finite-sample uniformity** (caveat, not theorem):
+   KS<0.25 is an empirical finite-sample claim (Hansen N(0,1) under
+   H0 is asymptotic — B→∞, n_k→∞ — and the recenter injects `O(1/B)`
+   bias at finite B). The legacy KS<0.25 is reported as "empirical
+   finite-sample calibration; asymptotic uniformity holds under
+   Hansen (2005) Assumption 1." Honest power may be a negative finding:
+   max-of-K at K~10³–10⁴ may price realistic drift out, in which case
+   the paper reports `reject(0.3–0.5 R/trade) < 0.75` as a guardrail
+   finding (not silently inflate drift to manufacture a pass).
+
+NaN-safe fallback: any ``trial_r_nets=None`` / empty / `std(d_k)<=0` /
+`observed N<2` caller degrades to `p_hansen = p_naive` (legacy p) with
+`stats["fallback"]=True`. Legacy ``portfolio_spa`` callers passing no
+flags see byte-identical 3-tuples — the Hansen block is opt-in.
+
+References: Hansen (2005), "A Test for Superior Predictive Ability"
+(provides the Eq.6-8 test-statistic framework); Phipson & Smyth (2010),
+"Permutation P-values Should Never Be Zero" (provides the add-one
+correction applied here). Note: a prior reference list entry cited
+"Davé & Seal (2008)" for this correction; that paper does not
+address the add-one — the correct citation is Phipson & Smyth (2010).
 
 ### FDR (Benjamini-Hochberg)
 
@@ -360,8 +410,12 @@ Two strategy types supported via `strategy_type` int (0=vol_compression,
   Non-Normality." *Journal of Portfolio Management* 40(5).
 - Hansen, P. R. (2005). "A Test for Superior Predictive Ability."
   *Journal of Business & Economic Statistics* 23(4).
-- Davé, R. D. & Seal, K. (2008). "Improved Bootstrap Confidence
-  Intervals." Working paper.
+- Phipson, B. & Smyth, G. K. (2010). "Permutation P-values Should
+  Never Be Zero: Calculating Exact P-values When Permutations Are
+  Randomly Drawn." *Statistical Applications in Genetics and
+  Molecular Biology* 9(1), Article 39.
+  (Note: the prior entry for "Davé & Seal (2008)" has been retired;
+  it did not address the add-one correction used here.)
 - Benjamini, Y. & Hochberg, Y. (1995). "Controlling the False
   Discovery Rate: A Practical and Powerful Approach to Multiple
   Testing." *Journal of the Royal Statistical Society, Series B*
@@ -388,6 +442,12 @@ given the same configuration.
 
 ## 12. Versioning
 
-This methodology applies to `quant_lib` v0.2.2 (released
-2026-06-26). Major methodology changes will be documented in
-`CHANGELOG.md` with version bumps.
+This methodology applies to **`quant_lib` v0.5.1** (released
+2026-07-01; matches `pyproject.toml:7`). Major methodology changes
+will be documented in `CHANGELOG.md` with version bumps.
+
+**Drift detection**: when bumping `pyproject.toml` `version`, also
+update the version pin in this section and re-validate that every
+formula reference (`core/_testing.py:…`, `core/_wfa.py:…`,
+`core/_spa.py:…`) still matches the current source — line numbers
+shift as the code evolves.

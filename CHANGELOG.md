@@ -7,6 +7,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added (Hansen-literal SPA, claim #3 Blocker A fix)
+
+- **Hansen (2005) Eq.6-8 SPA implemented** (`quant_lib/core/_spa.py`,
+  `quant_lib/core/_metrics.py`, `quant_lib/research/candidate.py`,
+  `quant_lib/research/results.py`, `quant_lib/__init__.py`,
+  `quant_lib/core/_wfa.py`): Politis–Romano (1994) stationary block
+  bootstrap over per-trial IS loss-differentials `d_k = -r_net_k`,
+  Hansen (2005) Eq.7 recenter with nuisance-parameter discarding
+  `Ā_k_trunc = Ā_k * 1{Ā_k ≥ 0}`, and Eq.8 cross-strategy maximum
+  statistic `T_null_max = max_k T_acc^k_b` — the multiple-testing
+  correction (the missing piece from White's Reality Check that the
+  legacy circular-permutation path lacked). Numpy-only on `pnl_array`s
+  so the existing SPA spy `2*n_iters` invariant holds on BOTH paths.
+  Opt-in via `recenter_policy="hansen_literal"` + `trial_r_nets=...`
+  + `return_statistics=True`; legacy callers see byte-identical
+  3-tuples.
+
+- **Three paper-accepted caveats** (disclosed in `docs/methodology.md`
+  §6, not silently "fixed"):
+
+  1. Honest-power may be a negative finding — `max-of-K` at K~10³-10⁴
+     may price realistic drift out; `reject(0.3-0.5 R/trade) < 0.75`
+     is reported as a guardrail finding, not silently inflated.
+  2. KS<0.25 is an empirical finite-sample claim, not a theorem —
+     Hansen N(0,1) under H0 is asymptotic, and the recenter injects
+     O(1/B) bias at finite B.
+  3. The spy `2*n_iters` invariant is gated to the LEGACY path;
+     Hansen's pure-numpy regime preserves the invariant by construction
+     rather than re-asserting it through simulate_* calls. A spy
+     sibling (`tests/test_spa_validation.py`) guards this.
+
+- **6 new `TestHansenCalibration` tests** (`tests/test_spa.py`):
+  `test_hansen_p_value_uniform_empirically_under_true_null`,
+  `test_hansen_power_curve_honest_drift`,
+  `test_hansen_p_value_floor_one_over_n_iters_plus_one`,
+  `test_hansen_p_value_ceiling_capped_at_one`,
+  `test_hansen_recenter_is_bootstrap_distribution_mean`,
+  `test_hansen_max_stat_gates_data_snooping`.
+
+- **Spy sibling test** (`tests/test_spa_validation.py`):
+  `test_hansen_path_emits_no_extra_simulate_calls` confirms the
+  Hansen path emits zero extra `simulate_*` calls beyond the legacy
+  `2*n_iters`, asserting the canonical spy invariant holds on both
+  legacy and Hansen paths.
+
+- **`spa_naive_p_value` field added** to `ExploreResult`
+  (`quant_lib/research/results.py`) and threaded through
+  `run_explore` (`quant_lib/__init__.py`). `spa_p_value` now carries
+  the Hansen-corrected p when WFA `trial_r_nets` are available
+  (NaN-safe fallback to legacy); the legacy circular-permutation p
+  is preserved in `spa_naive_p_value` for transparency. `getattr`
+  guard keeps `MockCandidate` / `StubCandidate` test fixtures green.
+
+- **`all_trial_r_nets` field** on `Candidate` (`quant_lib/research/
+  candidate.py`) and `trial_r_nets` key per fold dict (collected in
+  `core/_wfa.py:WalkForwardObjective`, stored as `.tolist()` so the
+  WFA reproducibility tests' `params_a == params_b` dict equality
+  stays unambiguous; `None` sentinels mark trials that short-
+  circuited an early return).
+
+- **3 new `edge_metrics` keys**: `spa_naive_p_value`,
+  `spa_joint_k_trials`, `hansen_fallback` (NaN-safe lens into whether
+  the Hansen block exercised the loss-differential bootstrap or
+  degraded to legacy).
+
+- **NaN-safe fallback**: callers passing `trial_r_nets=None` /
+  empty / `std(d_k) <= 0` / `observed N < 2` degrade to
+  `p_hansen = p_naive` with `stats["fallback"] = True` +
+  `stats["fallback_reason"]` (one of `no_trial_r_nets`,
+  `observed_n_less_than_2`, `trial_std_zero`, `observed_std_zero`).
+  Every legacy `trial_r_nets=None` caller sees byte-identical 3-tuples.
+
+- **`STATIC["spa_hansen_block_length_override"]`** knob
+  (`quant_lib/core/_config.py`): default 0 → use Politis–Romano
+  `p = max(1, round(n_k**(1/3)))` per trial; >0 forces a fixed
+  expected block length. Disclosed in paper methodology §6.
+
+- **`_stationary_block_bootstrap_resample` primitive**
+  (`quant_lib/core/_metrics.py`): Politis–Romano (1994) stationary
+  block bootstrap helper (`L ~ Geometric(1/p)`, expected length
+  `= p`, circular wrap); sibling to (not a refactor of) the existing
+  `run_bootstrap` / `run_trade_bootstrap`. 5-test parametric guard
+  in `tests/test_metrics_bootstrap.py` (incl. empirical-mean check
+  `mean(L) ≈ p` over 10k draws).
+
+- **`Candidate` `run_edge_testing`** now passes the 3 opt-in kwargs
+  at the `portfolio_spa` call site (4-tuple unpack) so production
+  callers transparently pick up the Hansen-corrected p without
+  any API-surface change.
+
 ### Changed (Phase 5 — code quality + test coverage)
 
 - **PSR docstring correction** (`quant_lib/core/_testing.py`):
@@ -455,6 +545,40 @@ the post-Phase-4 systematic review. All changes are backward-compatible
 - Phase 3 high-risk refactors: `Trade` TypedDict, allocators dedup,
   EngineArgs call-site refactor, entry-slip helper, MTM dedup.
   See CHANGELOG v0.4.1 for the deferred list.
+
+### Changed (JSS submission prep) — 2026-07-05
+
+- **License**: MIT → GPL-3.0-or-later (LICENSE file replaced; pyproject.toml
+  classifier updated from `License :: OSI Approved :: MIT License` to
+  `License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)`).
+- **Project identity**: PyPI name `quant_lib` → `sealedge` (pyproject.toml
+  `[project] name`); mkdocs.yml `site_name`/`repo_url`/`repo_name` aligned;
+  README.md top branding synced.
+- **Authors**: `quant_lib contributors` → Hansen Winarto <hansenwinarto@binus.ac.id>.
+- **GitHub URLs**: `Hansiongs/hans-backtest` → `Hansiongs/sealedge` in
+  pyproject.toml `[project.urls]`, mkdocs.yml, README.md CI/Lint badge URLs,
+  and Installation section `git clone` URL.
+- **Development Status**: dropped classifier `Development Status :: 4 - Beta`;
+  no replacement (JSS expects stable without explicit Production claim).
+
+### Internal (preserved for backward-compat)
+
+- Internal Python package name remains `quant_lib` (pyproject.toml
+  `[tool.setuptools.packages.find] include = ["quant_lib*"]`; CLI script
+  `quant_exp = "quant_lib.cli.main:app"`).
+- All `from quant_lib import ...` import statements in README.md,
+  notebooks/, and examples unchanged. After `pip install sealedge`, users
+  continue to `import quant_lib` and call `quant_exp` CLI as before.
+- README.md internal architecture diagram keeps `quant_lib/*` folder
+  references as those are real filesystem paths.
+
+### Deferred to post-paper / pre-submission
+
+- Real PyPI publish of v0.5.2 (or v1.0.0) — placeholder release to be
+  yanked first if any.
+- GitHub Release tag → Zenodo DOI → save in CITATION.cff.
+- CITATION.cff final version with full author affiliation block.
+- `requirements.lock` regeneration if dependency versions changed.
 
 ## [0.5.0] - 2026-06-30
 

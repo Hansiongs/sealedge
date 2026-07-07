@@ -8,6 +8,7 @@ Targets:
 - Session recording + journal logging
 """
 
+import os
 import tempfile
 from datetime import timedelta
 
@@ -513,8 +514,20 @@ class TestCommitMetrics:
             assert isinstance(result, CommitResult)
 
     def test_commit_respects_custom_min_train_months(self):
-        """Phase 3.7 E4: hypothesis with higher min_train_months is enforced."""
+        """Phase 3.7 E4: hypothesis with higher min_train_months is enforced.
+
+        Two scenarios:
+        1. Training long enough (60mo) for 24-month min: commit succeeds.
+        2. Training too short (12mo) for 24-month min: commit raises.
+
+        Phase 4.x Blocker fix: scenario 1 consumes the holdout, so
+        scenario 2 must clean the broken seal file before constructing
+        its own session (the conftest autouse seal cleanup runs at test
+        boundaries, not within a single test).
+        """
         from quant_lib.audit import for_vol_compression
+        from tests.conftest import _PROCESS_SEAL_DIR
+
         with tempfile.TemporaryDirectory() as tmp:
             cand = _make_candidate_ready(tmp)
             # Replace hypothesis with one requiring 24 months
@@ -529,8 +542,23 @@ class TestCommitMetrics:
                 )
             assert isinstance(result, CommitResult)
 
-            # Now test with insufficient training for the 24-month requirement
-            cand2 = _make_candidate_ready(tmp)
+        # Scenario 2: insufficient training for the 24-month requirement.
+        # Phase 4.x Blocker: scenario 1 broke the seal at the canonical
+        # path. The conftest seal-cleanup fixture runs between tests,
+        # not within them — so we clean the file manually here.
+        seal_path = os.path.join(
+            _PROCESS_SEAL_DIR, "holdout_2025-01-01_2025-06-30.json",
+        )
+        if os.path.exists(seal_path):
+            os.remove(seal_path)
+        journal_path = os.path.join(
+            _PROCESS_SEAL_DIR, "journal_session_2025-01-01_2025-06-30.json",
+        )
+        if os.path.exists(journal_path):
+            os.remove(journal_path)
+
+        with tempfile.TemporaryDirectory() as tmp2:
+            cand2 = _make_candidate_ready(tmp2)
             cand2.hypothesis = for_vol_compression(
                 "test_higher_min_2", "m", "b", "c", min_train_months=24,
             )

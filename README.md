@@ -1,17 +1,17 @@
-# quant_lib
+# sealedge
 
 **Honest backtesting toolkit for quantitative trading strategies.**
 
-quant_lib is a Python library for testing whether a trading strategy has a
+sealedge is a Python library for testing whether a trading strategy has a
 genuine statistical edge on historical cryptocurrency data. It enforces
 methodological discipline (no look-ahead, sealed holdouts, multiple-testing
 adjustment) so that reported results can be defended to a skeptical reviewer.
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-1318_passing-brightgreen.svg)](.github/workflows/tests.yml)
-[![CI](https://github.com/Hansiongs/hans-backtest/actions/workflows/tests.yml/badge.svg)](.github/workflows/tests.yml)
-[![Lint](https://github.com/Hansiongs/hans-backtest/actions/workflows/lint.yml/badge.svg)](.github/workflows/lint.yml)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL_3.0--or--later-blue.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-1325_passing-brightgreen.svg)](.github/workflows/tests.yml)
+[![CI](https://github.com/Hansiongs/sealedge/actions/workflows/tests.yml/badge.svg)](.github/workflows/tests.yml)
+[![Lint](https://github.com/Hansiongs/sealedge/actions/workflows/lint.yml/badge.svg)](.github/workflows/lint.yml)
 [![Version 0.5.1](https://img.shields.io/badge/version-0.5.1-blue.svg)](CHANGELOG.md)
 
 ## Why quant_lib?
@@ -26,8 +26,26 @@ inflated results. quant_lib solves this with:
 - **Multiple-testing correction** — Bonferroni (1-indexed) + FDR (BH)
 - **PSR + ESS** instead of raw Sharpe (accounts for skew/kurtosis,
   autocorrelation)
-- **SPA test** (Hansen 2005, Davé-corrected) for final portfolio
-  significance
+- **SPA test** (two coexisting nulls selectable via `portfolio_spa`
+  kwargs):
+  - **Legacy** (default, `recenter_policy="legacy"`): uniform
+    time-anchored circular permutation of observed trades, with
+    Phipson & Smyth (2010) add-one correction. Stable regression-tested
+    3-tuple contract.
+  - **Hansen-literal** (opt-in, `recenter_policy="hansen_literal"` +
+    `trial_r_nets=...` + `return_statistics=True`): Politis–Romano
+    (1994) stationary block bootstrap over per-trial IS
+    loss-differentials + Hansen (2005) Eq.7 recenter/discarding +
+    Eq.8 cross-strategy max-statistic + Phipson & Smyth add-one.
+    The cross-strategy max is the multiple-testing correction (the
+    whole point of White's Reality Check) that the legacy path lacks.
+    Numpy-only on `pnl_array`s so the SPA spy invariant holds on
+    both paths. Hansen-corrected p is in `spa_p_value`; legacy p is
+    preserved in `spa_naive_p_value` for transparency. See
+    [docs/methodology.md](docs/methodology.md) §6 for the exact
+    null, finite-sample divergences, and the three user-accepted
+    caveats (honest-power may be a negative finding;
+    KS<0.25 is empirical-only; spy gated to legacy path).
 
 See [docs/methodology.md](docs/methodology.md) for the full method
 writeup.
@@ -155,7 +173,7 @@ run_explore("my_strategy")`.
 
 ## Architecture
 
-quant_lib is organized in five layers, with strict dependency
+sealedge is organized in five layers, with strict dependency
 direction (arrows point downward — higher layers may import from
 lower, never the reverse):
 
@@ -216,7 +234,7 @@ methodology writeup. Highlights:
 ## Testing
 
 ```bash
-# Run all 1169 tests (~140s)
+# Run all 1324 tests (~150s)
 make test
 
 # Run fast tests only (skips @pytest.mark.slow)
@@ -230,7 +248,7 @@ make test-cov
 make lint
 ```
 
-**Test categories** (1169 total):
+**Test categories** (1324 total):
 - Unit tests (per-function)
 - Integration tests (component interaction)
 - Property-based tests (Hypothesis, ~22 invariants)
@@ -260,7 +278,7 @@ quant_lib/
 ├── core/               # Private implementation (JIT engine)
 ├── research/           # ResearchSession, Candidate, commit
 ├── experiments/        # (within quant_lib/) User-defined experiment configs
-├── tests/              # 1169 tests
+├── tests/              # 1324 tests
 ├── tools/              # Public composable API
 ├── utils/              # Shared utilities
 ├── docs/
@@ -269,7 +287,7 @@ quant_lib/
 │   └── workflows/      # CI: tests.yml + lint.yml + mutation.yml
 ├── CHANGELOG.md
 ├── CITATION.cff
-├── LICENSE              # MIT
+├── LICENSE              # GPL-3.0-or-later
 ├── Makefile
 ├── pyproject.toml
 └── README.md
@@ -311,7 +329,7 @@ make mutate        # mutation testing (slow, ~10-30 min)
 ## Status
 
 This is a research-quality framework. Critical paths have high test
-coverage (1109 tests, including property-based, reproducibility, and
+coverage (1324 tests, including property-based, reproducibility, and
 config validation). Branch coverage is tracked via `--cov-branch`
 (enforced in `make test-cov`). The core engine (`core/_engine.py`)
 is exercised by integration tests but the JIT-compiled body is
@@ -327,7 +345,7 @@ opaque to coverage tooling.
 
 ```bash
 # Clone the repo
-git clone https://github.com/Hansiongs/hans-backtest.git
+git clone https://github.com/Hansiongs/sealedge.git
 cd quant_lib
 
 # Install with dev dependencies
@@ -339,15 +357,16 @@ pip install -e ".[dev]"
 
 ## Citation
 
-If you use quant_lib in a paper, please cite it as:
+If you use sealedge in a paper, please cite it as:
 
 ```bibtex
-@software{quant_lib,
-  author = {quant_lib contributors},
-  title = {quant_lib: Honest backtesting for crypto strategies},
+@software{sealedge,
+  author = {Winarto, Hansen},
+  title = {sealedge: Honest backtesting toolkit for quantitative trading strategies with sealed holdout discipline},
   version = {0.5.1},
   year = {2026},
-  url = {https://github.com/Hansiongs/hans-backtest}
+  url = {https://github.com/Hansiongs/sealedge},
+  license = {GPL-3.0-or-later}
 }
 ```
 
@@ -356,7 +375,7 @@ citation generation.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+GPL-3.0-or-later — see [LICENSE](LICENSE).
 
 ## Contributing
 

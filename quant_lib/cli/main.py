@@ -27,7 +27,19 @@ app = typer.Typer(
 
 
 def _version_callback(value: bool) -> None:
-    """Print version and exit."""
+    """Print version and exit.
+
+    Parameters
+    ----------
+    value : bool
+        If True, print the version and exit. Wired to the ``--version``
+        Typer option.
+
+    Returns
+    -------
+    None
+        Exits the process via ``typer.Exit()``.
+    """
     if value:
         from quant_lib import __version__
         typer.echo(f"quant_exp {__version__}")
@@ -47,7 +59,15 @@ def main(
         0, "-v", "--verbose", count=True, help="Increase verbosity (-v, -vv)."
     ),
 ) -> None:
-    """quant_exp: honest backtesting for crypto strategies."""
+    """quant_exp: honest backtesting for crypto strategies.
+
+    Parameters
+    ----------
+    version : bool
+        Show version and exit (handled by ``_version_callback``).
+    verbose : int
+        Verbosity level. Each ``-v`` flag adds 1; ``-vv`` = 2, etc.
+    """
 
 
 # Register subcommands. These imports are placed after `app` is defined

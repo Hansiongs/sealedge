@@ -380,6 +380,98 @@ class TestHoldoutSet:
         hs.commit_break(self._FAKE_HASH)
         assert not hs.verify()
 
+    # --- Phase 4.x Blocker fix: one-shot holdout invariant ---
+
+    def test_constructor_loads_existing_sealed_state(self):
+        """Constructing HoldoutSet on an existing sealed file must
+        reproduce the sealed state in-memory -- without this, a
+        second ``ResearchSession`` against the same holdout_period
+        silently overwrites the on-disk seal.
+        """
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            seal_path = f"{tmp}/seal.json"
+            hs1 = HoldoutSet("t", "2025-01-01", "2025-12-31", seal_path=seal_path)
+            hs1.seal(data_hash=self._FAKE_HASH)
+            assert hs1.is_sealed()
+
+            # Construct a second HoldoutSet against the same seal file.
+            hs2 = HoldoutSet("t", "2025-01-01", "2025-12-31", seal_path=seal_path)
+            # Must reflect the on-disk state, NOT fresh empty state.
+            assert hs2.is_sealed(), (
+                "Blocker: second HoldoutSet must load sealed state from "
+                "disk; otherwise seal() overwrites the existing seal."
+            )
+            assert hs2.verify() is True
+
+    def test_constructor_refuses_to_seal_after_break(self):
+        """Constructing HoldoutSet on a broken seal file must prevent
+        a second ``seal()`` call (the one-shot invariant)."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            seal_path = f"{tmp}/seal.json"
+            hs1 = HoldoutSet("t", "2025-01-01", "2025-12-31", seal_path=seal_path)
+            hs1.seal(data_hash=self._FAKE_HASH)
+            hs1.commit_break("real" + "0" * 60)
+            assert hs1.is_broken()
+
+            # Second session must NOT silently re-use the holdout.
+            hs2 = HoldoutSet("t", "2025-01-01", "2025-12-31", seal_path=seal_path)
+            assert hs2.is_broken(), (
+                "Blocker: second HoldoutSet must load broken state from "
+                "disk so seal() refuses to overwrite it."
+            )
+            with pytest.raises(RuntimeError, match="already broken"):
+                hs2.seal(data_hash=self._FAKE_HASH)
+
+    def test_constructor_ignores_tampered_seal_file(self):
+        """A seal file with an invalid HMAC signature must NOT be
+        trusted at construction time -- falls through to fresh state.
+        The existing tamper-detection tests in test_regression_b0_1
+        cover the post-construction verify() path."""
+        import json
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            seal_path = f"{tmp}/seal.json"
+            forged = {
+                "start": "2025-01-01",
+                "end": "2025-12-31",
+                "sealed_at": "2025-01-01T00:00:00+00:00",
+                "broken_at": None,
+                "data_hash": self._FAKE_HASH,
+                "signature": "forged_" + "0" * 56,
+            }
+            with open(seal_path, "w") as f:
+                json.dump(forged, f)
+
+            # Construction must NOT replicate forged state.
+            hs = HoldoutSet("t", "2025-01-01", "2025-12-31", seal_path=seal_path)
+            assert not hs.is_sealed(), (
+                "Constructor must not trust a forged seal file."
+            )
+            assert hs._seal.broken_at is None
+            assert hs._seal.sealed_at is None
+
+    def test_constructor_handles_missing_file_gracefully(self):
+        """seal_path set but file missing: fresh in-memory state.
+        Existing behavior -- constructor must not crash."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            seal_path = f"{tmp}/never_existed.json"
+            hs = HoldoutSet("t", "2025-01-01", "2025-12-31", seal_path=seal_path)
+            assert not hs.is_sealed()
+            assert hs._seal.broken_at is None
+
+    def test_constructor_handles_corrupt_json_gracefully(self):
+        """seal_path with unparseable JSON: fresh in-memory state."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            seal_path = f"{tmp}/seal.json"
+            with open(seal_path, "w") as f:
+                f.write("{not valid json")
+            hs = HoldoutSet("t", "2025-01-01", "2025-12-31", seal_path=seal_path)
+            assert not hs.is_sealed()
+
 
 class TestHoldoutSeal:
     def test_round_trip_dict(self):
