@@ -52,6 +52,7 @@ GLOBAL_SEED: int = 42
 # ``STRATEGY_NAME_TO_INT`` in ``experiments/base.py``.
 STRATEGY_VOL_COMPRESSION: int = 0
 STRATEGY_PULLBACK_SNIPER: int = 1
+STRATEGY_FUNDING_RATE_CARRY: int = 2
 
 
 # ════════════════════════════════════════════════════════════════════════

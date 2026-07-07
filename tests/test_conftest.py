@@ -89,6 +89,9 @@ class TestMakeEngineArrays:
             "hh_20", "ll_20", "ema_200s",
             "rsi_14", "bullish_reversal", "bearish_reversal",
             "vol_pct_rank", "rvol", "atrs",
+            # Phase 2: funding_rate_carry strategy needs funding_pct_rank
+            # (30-day rolling percentile of funding rates).
+            "funding_pct_rank",
             "funding_rates", "macro_vols", "macro_trends",
             "is_weekends", "is_funding_hours",
         }

@@ -20,14 +20,16 @@ import pandas as pd
 from quant_lib.audit import Hypothesis
 
 
-# Type alias for strategy name (string is user-facing; int is engine-internal)
-StrategyType = Literal["vol_compression", "pullback_sniper"]
+# Type alias for strategy name (string is user-facing; int is engine-internal).
+# Phase 2: added "funding_rate_carry" (perp funding mean-reversion strategy).
+StrategyType = Literal["vol_compression", "pullback_sniper", "funding_rate_carry"]
 
 
 # Mapping from string name to int (matches core/_engine.py constants)
 STRATEGY_NAME_TO_INT: dict[str, int] = {
     "vol_compression": 0,
     "pullback_sniper": 1,
+    "funding_rate_carry": 2,
 }
 # The values are typed as StrategyType (not generic str) so that
 # passing the result to ExperimentConfig(strategy_type=...) doesn't
@@ -36,6 +38,7 @@ STRATEGY_NAME_TO_INT: dict[str, int] = {
 STRATEGY_INT_TO_NAME: dict[int, StrategyType] = {
     0: "vol_compression",
     1: "pullback_sniper",
+    2: "funding_rate_carry",
 }
 
 

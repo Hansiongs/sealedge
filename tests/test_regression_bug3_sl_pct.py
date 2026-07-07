@@ -36,7 +36,7 @@ from tests.conftest import (
 
 
 def _build_engine_arrays(n: int = 500, seed: int = 42, sl_mult: float = 2.0):
-    """Build the bare 18-tuple of arrays the @njit engine expects.
+    """Build the bare 19-tuple of arrays the @njit engine expects.
 
     Returns (arrays, random_draws).  ``arrays`` is a tuple in the
     exact positional order ``fast_trade_loop`` expects; the caller
@@ -61,6 +61,10 @@ def _build_engine_arrays(n: int = 500, seed: int = 42, sl_mult: float = 2.0):
         np.full(n, 0.05),                   # vol_pct_rank (compressed)
         np.full(n, 5.0),                    # rvol
         atr,                                # atrs
+        # Phase 2: funding_rate_carry feature (30-day percentile rank).
+        # Constant 0.5 = neutral regime -- tests using vol_compression
+        # are unaffected, but the @njit signature requires this slot.
+        np.full(n, 0.5),                    # funding_pct_rank
         np.full(n, 0.0001),                 # funding_rates
         np.full(n, 0.5),                    # macro_vols
         np.ones(n, dtype=np.int32),         # macro_trends (bull)
@@ -143,6 +147,7 @@ class TestEngineSlPctContract:
             1, 1,         # use_rvol, use_ema
             1, 1,         # allow_long, allow_short
             30.0, 70.0,   # rsi thresholds
+            0.90, 0.40, 0.60,  # funding_rate_carry thresholds (Phase 2)
             2.0,          # weekend_penalty
             DEFAULTS["stress_test_multiplier"],   # stress_mult
             random_draws,
@@ -166,7 +171,8 @@ class TestEngineSlPctContract:
             return fast_trade_loop(
                 *arrays, 0, 0.10, 2.5, 5, 3.0,
                 sl, 36, 0, 0.05, 1, 1, 1, 1,
-                30.0, 70.0, 2.0, DEFAULTS["stress_test_multiplier"], draws,
+                30.0, 70.0, 0.90, 0.40, 0.60, 2.0,
+                DEFAULTS["stress_test_multiplier"], draws,
                 1.5, 0.5,
             )
 

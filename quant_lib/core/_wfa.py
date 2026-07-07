@@ -163,6 +163,11 @@ class WalkForwardObjective:
             self.df_p["vol_pct_rank"].values,
             self.df_p["rvol"].values,
             self.df_p["atr"].values,
+            # Phase 2: funding_pct_rank slot. WFA currently exercises
+            # vol_compression and pullback_sniper; this slot is constant
+            # 0.5 (neutral funding regime) so the funding-carry branch
+            # never triggers until WFA is extended for that strategy.
+            self.df_p["funding_pct_rank"].values if "funding_pct_rank" in self.df_p.columns else np.full(len(self.df_p), 0.5, dtype=np.float64),
             self.df_p["funding_rate"].values,
             self.df_p["macro_vol"].values,
             self.df_p["macro_trend"].values,
@@ -183,6 +188,8 @@ class WalkForwardObjective:
             self.allow_short,
             rsi_oversold,
             rsi_overbought,
+            # Phase 2: funding_rate_carry thresholds (safe defaults).
+            0.90, 0.40, 0.60,
             DEFAULTS["weekend_liquidity_penalty"],
             DEFAULTS["stress_test_multiplier"],
             self.random_draws,
@@ -370,6 +377,8 @@ def _run_engine_on_data(
         df["vol_pct_rank"].values,
         df["rvol"].values,
         df["atr"].values,
+        # Phase 2: funding_pct_rank slot (safe default).
+        df["funding_pct_rank"].values if "funding_pct_rank" in df.columns else np.full(len(df), 0.5, dtype=np.float64),
         df["funding_rate"].values,
         df["macro_vol"].values,
         df["macro_trend"].values,
@@ -390,6 +399,8 @@ def _run_engine_on_data(
         allow_short,
         best_p.get("rsi_oversold", 30.0),
         best_p.get("rsi_overbought", 70.0),
+        # Phase 2: funding_rate_carry thresholds (safe defaults).
+        0.90, 0.40, 0.60,
         DEFAULTS["weekend_liquidity_penalty"],
         DEFAULTS["stress_test_multiplier"],
         random_draws_is,
@@ -681,6 +692,8 @@ def run_wfa_per_symbol(
             df_oos["vol_pct_rank"].values,
             df_oos["rvol"].values,
             df_oos["atr"].values,
+            # Phase 2: funding_pct_rank slot (safe default).
+            df_oos["funding_pct_rank"].values if "funding_pct_rank" in df_oos.columns else np.full(len(df_oos), 0.5, dtype=np.float64),
             df_oos["funding_rate"].values,
             df_oos["macro_vol"].values,
             df_oos["macro_trend"].values,
@@ -701,6 +714,8 @@ def run_wfa_per_symbol(
             allow_short,
             rsi_oversold_oos,
             rsi_overbought_oos,
+            # Phase 2: funding_rate_carry thresholds (safe defaults).
+            0.90, 0.40, 0.60,
             DEFAULTS["weekend_liquidity_penalty"],
             DEFAULTS["stress_test_multiplier"],
             random_draws_oos,

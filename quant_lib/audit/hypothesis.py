@@ -19,6 +19,7 @@ from typing import Optional
 from quant_lib.core._config import (  # noqa: I001, E402
     STRATEGY_VOL_COMPRESSION,
     STRATEGY_PULLBACK_SNIPER,
+    STRATEGY_FUNDING_RATE_CARRY,
 )
 
 
@@ -54,6 +55,7 @@ class StrategyType(IntEnum):
 
     VOL_COMPRESSION = 0
     PULLBACK_SNIPER = 1
+    FUNDING_RATE_CARRY = 2
 
 
 # Note: ``STRATEGY_VOL_COMPRESSION`` and ``STRATEGY_PULLBACK_SNIPER``
@@ -353,6 +355,8 @@ class Hypothesis:
             return "vol_compression_breakout"
         elif self.strategy_type == StrategyType.PULLBACK_SNIPER:
             return "pullback_sniper"
+        elif self.strategy_type == StrategyType.FUNDING_RATE_CARRY:
+            return "funding_rate_carry"
         return f"unknown_{self.strategy_type}"
 
     def merged_static_overrides(self) -> dict:
@@ -389,6 +393,18 @@ DEFAULT_PULLBACK_SNIPER_SEARCH_SPACE = {
     "sl_mult": (1.0, 3.0),
     "rsi_oversold": (25, 35),
     "rsi_overbought": (65, 75),
+}
+
+DEFAULT_FUNDING_RATE_CARRY_SEARCH_SPACE = {
+    "vol_pct_thresh": (0.10, 0.40),   # unused but kept for compat
+    "pullback_bars": (3, 8),          # unused but kept for compat
+    "trail_atr": (1.5, 5.0),
+    "sl_mult": (1.0, 3.0),
+    "rsi_oversold": (25, 35),         # unused but kept for compat
+    "rsi_overbought": (65, 75),       # unused but kept for compat
+    "funding_entry_pct": (0.85, 0.95),  # entry threshold (e.g., 0.90 = top 10th pctile)
+    "funding_exit_low": (0.30, 0.50),   # neutral zone lower bound
+    "funding_exit_high": (0.50, 0.70),  # neutral zone upper bound
 }
 
 
@@ -734,6 +750,196 @@ def for_pullback_sniper(
         universe_rules=universe_rules,
         strategy_type=STRATEGY_PULLBACK_SNIPER,
         search_space=search_space or DEFAULT_PULLBACK_SNIPER_SEARCH_SPACE,
+        static_overrides=static_overrides,
+        strategy_params=strategy_params,
+        min_train_months=min_train_months,
+    )
+
+
+def for_funding_rate_carry(
+    name: str,
+    mechanism: str,
+    boundary_conditions: str,
+    success_criteria: str,
+    entry_logic: str = (
+        "funding_pct_rank > entry_thresh -> SHORT; "
+        "funding_pct_rank < (1 - entry_thresh) -> LONG"
+    ),
+    exit_logic: str = (
+        "Funding returns to neutral zone [exit_low, exit_high] OR "
+        "trailing stop OR bailout"
+    ),
+    universe_rules: str | None = None,
+    search_space: dict | None = None,
+    static_overrides: dict | None = None,
+    strategy_params: dict | None = None,
+    min_train_months: int = 12,
+) -> Hypothesis:
+    """Factory: Hypothesis for ``funding_rate_carry`` (perp funding carry) strategy.
+
+    This is the canonical hypothesis factory for the funding_rate_carry
+    strategy (engine constant ``STRATEGY_FUNDING_RATE_CARRY = 2``). The
+    factory sets ``strategy_type=2`` and applies
+    ``DEFAULT_FUNDING_RATE_CARRY_SEARCH_SPACE`` if no search_space is
+    provided.
+
+    Funding rate carry is a fundamentally different strategy class from
+    vol_compression (momentum) and pullback_sniper (mean-reversion):
+
+    - Uses 30-day rolling percentile rank of perp funding rates
+    - Shorts when funding is elevated (P90+: longs paying shorts)
+    - Longs when funding is depressed (P10-: shorts paying longs)
+    - Exits when funding returns to neutral zone [P30-P70]
+    - Trade thesis: funding rates mean-revert to neutral; capturing
+      the carry while waiting for the reversion is the edge.
+
+    Parameters
+    ----------
+    name : str
+        Short identifier. Must match ``[a-z0-9_]+``.
+    mechanism : str
+        Why the strategy should have an edge. The default mechanism
+        is "perp funding rates mean-revert to neutral; capturing
+        carry during the reversion is the edge". Override for custom
+        mechanisms.
+    boundary_conditions : str
+        Conditions under which the hypothesis is expected to fail.
+        Examples:
+        - "fails during structural funding regimes (e.g., sustained
+          bull market with persistently positive funding)"
+        - "fails on illiquid pairs where funding rate signal is noisy"
+        - "fails during market stress when funding spikes are not
+          mean-reverting but persistent"
+    success_criteria : str
+        Pre-defined success metrics.
+    entry_logic : str, default
+        ``"funding_pct_rank > entry_thresh -> SHORT; funding_pct_rank
+        < (1 - entry_thresh) -> LONG"``. Override only if your
+        strategy differs meaningfully.
+    exit_logic : str, default
+        ``"Funding returns to neutral zone [exit_low, exit_high] OR
+        trailing stop OR bailout"``.
+    universe_rules : str, optional
+        Universe selection criteria.
+    search_space : dict, optional
+        Optuna search space. If None, uses
+        ``DEFAULT_FUNDING_RATE_CARRY_SEARCH_SPACE``:
+
+        .. code-block:: python
+
+           {
+               "vol_pct_thresh": (0.10, 0.40),     # unused but kept for compat
+               "pullback_bars": (3, 8),            # unused but kept for compat
+               "trail_atr": (1.5, 5.0),
+               "sl_mult": (1.0, 3.0),
+               "rsi_oversold": (25, 35),           # unused but kept for compat
+               "rsi_overbought": (65, 75),         # unused but kept for compat
+               "funding_entry_pct": (0.85, 0.95),  # primary entry threshold
+               "funding_exit_low": (0.30, 0.50),   # neutral zone lower bound
+               "funding_exit_high": (0.50, 0.70),  # neutral zone upper bound
+           }
+
+        Focus tuning on ``funding_entry_pct``, ``funding_exit_low``,
+        ``funding_exit_high``, ``trail_atr``, and ``sl_mult``.
+
+    static_overrides : dict, optional
+        Per-hypothesis STATIC config overrides.
+    strategy_params : dict, optional
+        Strategy-specific params. Recognized keys:
+        - ``allow_long`` (bool, default True)
+        - ``allow_short`` (bool, default True)
+    min_train_months : int, default 12
+
+    Returns
+    -------
+    Hypothesis
+        Frozen dataclass instance with ``strategy_type=2``.
+
+    Examples
+    --------
+    **Minimal usage** (uses all defaults):
+
+    >>> from quant_lib.audit import for_funding_rate_carry
+    >>> hyp = for_funding_rate_carry(
+    ...     name="btc_funding_carry_v1",
+    ...     mechanism="Perp funding rates mean-revert; capture carry",
+    ...     boundary_conditions="Fails in persistent bull regimes",
+    ...     success_criteria="SPA p < 0.15, PF > 1.2",
+    ... )
+
+    **Production usage** (tighter entry threshold, long-only):
+
+    >>> hyp = for_funding_rate_carry(
+    ...     name="btc_funding_carry_v2",
+    ...     mechanism=(
+    ...         "Funding rates in BTC perps show strong mean-reversion: "
+    ...         "when the 8h funding rate exceeds the 95th percentile of "
+    ...         "the trailing 30-day distribution, the implicit short "
+    ...         "carry (received from longs) is reliably harvested over "
+    ...         "the subsequent 3-7 days as funding normalizes."
+    ...     ),
+    ...     boundary_conditions=(
+    ...         "Fails during structural bull regimes (2021 Q1, 2024 Q1) "
+    ...         where funding stays elevated for weeks. Fails on illiquid "
+    ...         "altcoins where funding is sparse."
+    ...     ),
+    ...     success_criteria="SPA p < 0.10, PF > 1.3, >= 30 OOS trades",
+    ...     universe_rules="BTC, ETH, SOL -- age >= 365d, 30d volume >= 100M USD",
+    ...     search_space={
+    ...         "funding_entry_pct": (0.90, 0.95),  # stricter than default
+    ...         "funding_exit_low": (0.35, 0.45),
+    ...         "funding_exit_high": (0.55, 0.65),
+    ...         "trail_atr": (2.0, 4.0),
+    ...         "sl_mult": (1.5, 2.5),
+    ...     },
+    ...     strategy_params={"allow_long": True, "allow_short": False},
+    ...     min_train_months=24,
+    ... )
+
+    Notes
+    -----
+    **Search space guidance**:
+
+    - ``funding_entry_pct``: higher = stricter entry (fewer trades,
+      higher per-trade quality). Default (0.85, 0.95) covers typical
+      crypto regimes. For "tight carry" strategies, try (0.92, 0.97).
+    - ``funding_exit_low`` / ``funding_exit_high``: define the neutral
+      zone. Symmetric around 0.5 (e.g., 0.35/0.65) is typical; asymmetric
+      zones (e.g., 0.40/0.60) bias toward longer hold periods.
+    - ``trail_atr``: trailing stop. Funding carry trades can be volatile
+      around funding events; wider stops (3-5 ATR) are typical.
+    - ``sl_mult``: initial SL. Funding-driven mean-reversion is
+      typically slower than price-driven, so wider SLs (1.5-2.5 ATR)
+      are common.
+
+    **Common pitfalls**:
+
+    1. Setting ``funding_entry_pct: (0.50, 0.60)`` -- not extreme enough,
+       generates noise entries on minor funding fluctuations.
+    2. Forgetting to disable shorts for "long-only carry" -- by default
+       both directions are enabled, which can double trade count and
+       dilute the carry signal quality.
+    3. Setting ``funding_exit_low > funding_exit_high`` -- invalid zone
+       definition; will cause infinite hold. Validate at registration.
+    4. Using this strategy on < 30 trades per year assets -- funding
+       signals require sufficient sample size for reliable PSR.
+
+    See Also
+    --------
+    for_vol_compression : Vol compression + breakout factory.
+    for_pullback_sniper : RSI + reversal factory.
+    Hypothesis : Underlying dataclass.
+    """
+    return Hypothesis(
+        name=name,
+        mechanism=mechanism,
+        boundary_conditions=boundary_conditions,
+        success_criteria=success_criteria,
+        entry_logic=entry_logic,
+        exit_logic=exit_logic,
+        universe_rules=universe_rules,
+        strategy_type=STRATEGY_FUNDING_RATE_CARRY,
+        search_space=search_space or DEFAULT_FUNDING_RATE_CARRY_SEARCH_SPACE,
         static_overrides=static_overrides,
         strategy_params=strategy_params,
         min_train_months=min_train_months,

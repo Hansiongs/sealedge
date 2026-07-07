@@ -15,10 +15,13 @@ from quant_lib.audit.hypothesis import (
     StrategyType,
     STRATEGY_VOL_COMPRESSION,
     STRATEGY_PULLBACK_SNIPER,
+    STRATEGY_FUNDING_RATE_CARRY,
     DEFAULT_VOL_COMPRESSION_SEARCH_SPACE,
     DEFAULT_PULLBACK_SNIPER_SEARCH_SPACE,
+    DEFAULT_FUNDING_RATE_CARRY_SEARCH_SPACE,
     for_vol_compression,
     for_pullback_sniper,
+    for_funding_rate_carry,
 )
 from quant_lib.audit.journal import ExperimentLog
 from quant_lib.audit.holdout import HoldoutSet
@@ -30,8 +33,11 @@ __all__ = [
     "StrategyType",
     "STRATEGY_VOL_COMPRESSION",
     "STRATEGY_PULLBACK_SNIPER",
+    "STRATEGY_FUNDING_RATE_CARRY",
     "DEFAULT_VOL_COMPRESSION_SEARCH_SPACE",
     "DEFAULT_PULLBACK_SNIPER_SEARCH_SPACE",
+    "DEFAULT_FUNDING_RATE_CARRY_SEARCH_SPACE",
     "for_vol_compression",
     "for_pullback_sniper",
+    "for_funding_rate_carry",
 ]

@@ -42,6 +42,11 @@ def _make_arrays(n=1000, seed=42):
         "macro_trends": rng.choice([-1, 1], n).astype(np.int32),
         "is_weekends": rng.integers(0, 2, n).astype(np.int32),
         "is_funding_hours": rng.integers(0, 2, n).astype(np.int32),
+        # Phase 2: funding_rate_carry strategy needs funding_pct_rank
+        # (30-day rolling percentile of funding rates). For unit tests
+        # a uniform distribution in [0, 1] suffices -- the strategy is
+        # not being calibrated, just exercised for correctness.
+        "funding_pct_rank": rng.uniform(0.0, 1.0, n).astype(np.float64),
     }
 
 
@@ -55,6 +60,12 @@ def _common_extra(arrays, seed=0):
         "rsi_overbought": 70.0,
         "trend_aligned_mult": 1.5,
         "trend_counter_mult": 0.5,
+        # Phase 2 funding_rate_carry thresholds (defaults used by the
+        # engine's backwards-compat path -- tests here don't exercise the
+        # funding-carry strategy, but the @njit signature requires them).
+        "funding_entry_pct": 0.90,
+        "funding_exit_low": 0.40,
+        "funding_exit_high": 0.60,
     }
 
 
@@ -275,10 +286,10 @@ class TestEngineArgsDataclass:
             market_data=(zeros, zeros, zeros, zeros),
             channel_features=(zeros, zeros, zeros),
             pullback_features=(zeros, zeros_i, zeros_i),
-            signal_features=(zeros, zeros, zeros),
+            signal_features=(zeros, zeros, zeros, zeros),
             auxiliary_features=(zeros, zeros, ones_i, zeros_i, zeros_i),
             strategy_type=0,
-            thresholds=(0.2, 2.5, 30.0, 70.0, 0.0),
+            thresholds=(0.2, 2.5, 30.0, 70.0, 0.90, 0.40, 0.60, 0.0),
             integer_params=(5, 36, 0, 0),
             exit_params=(3.0, 1.5),
             cost_model=(0.05, 2.0, 2.5),
@@ -299,10 +310,10 @@ class TestEngineArgsDataclass:
             market_data=(zeros_f, zeros_f, zeros_f, zeros_f),
             channel_features=(zeros_f, zeros_f, zeros_f),
             pullback_features=(zeros_f, zeros_i, zeros_i),
-            signal_features=(zeros_f, zeros_f, zeros_f),
+            signal_features=(zeros_f, zeros_f, zeros_f, zeros_f),
             auxiliary_features=(zeros_f, zeros_f, zeros_i, zeros_i, zeros_i),
             strategy_type=0,
-            thresholds=(0.0, 0.0, 0.0, 0.0, 0.0),
+            thresholds=(0.0, 0.0, 0.0, 0.0, 0.90, 0.40, 0.60, 0.0),
             integer_params=(0, 0, 0, 0),
             exit_params=(0.0, 0.0),
             cost_model=(0.0, 0.0, 0.0),
@@ -372,7 +383,7 @@ def _build_engine_args_for_behavioral(
     bullish_rev=None, bearish_rev=None, macro_trends=None,
     closes=None, highs=None, lows=None, opens=None,
     ema_200s=None, funding_rates=None, is_weekends=None,
-    is_funding_hours=None, macro_vols=None,
+    is_funding_hours=None, macro_vols=None, funding_pct_rank=None,
     integer_params=None, exit_params=None, cost_model=None,
     flags=None, trend_mults=None, thresholds=None,
 ) -> EngineArgs:
@@ -403,6 +414,7 @@ def _build_engine_args_for_behavioral(
             vol_pct_rank if vol_pct_rank is not None else np.full(n, 0.05),
             rvol if rvol is not None else np.full(n, 3.0),
             atrs if atrs is not None else np.full(n, 1.5),
+            funding_pct_rank if funding_pct_rank is not None else np.full(n, 0.5),
         ),
         auxiliary_features=(
             funding_rates if funding_rates is not None else np.zeros(n),
@@ -412,7 +424,7 @@ def _build_engine_args_for_behavioral(
             is_funding_hours if is_funding_hours is not None else np.zeros(n, dtype=np.int32),
         ),
         strategy_type=strategy_type,
-        thresholds=thresholds if thresholds is not None else (0.20, 2.5, 30.0, 70.0, 0.0),
+        thresholds=thresholds if thresholds is not None else (0.20, 2.5, 30.0, 70.0, 0.90, 0.40, 0.60, 0.0),
         integer_params=integer_params if integer_params is not None else (5, 36, 0, 0),
         exit_params=exit_params if exit_params is not None else (3.0, 1.5),
         cost_model=cost_model if cost_model is not None else (

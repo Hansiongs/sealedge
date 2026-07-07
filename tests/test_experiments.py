@@ -507,7 +507,8 @@ class TestAutoDiscovery:
         experiments should be in the registry."""
         assert exists("vol_compression_v1")
         assert exists("pullback_sniper_rsi")
-        assert count() == 2
+        # Phase 2: funding_rate_carry added -- 3 strategies total.
+        assert count() == 3
 
     def test_vol_compression_v1_details(self):
         cfg = get("vol_compression_v1")
@@ -551,7 +552,8 @@ class TestAutoDiscovery:
         assert count() == 0
         built_in.reset()
         discover_experiments()
-        assert count() == 2
+        # Phase 2: funding_rate_carry added -- 3 strategies total.
+        assert count() == 3
 
 
 # ════════════════════════════════════════════════════════════════════════

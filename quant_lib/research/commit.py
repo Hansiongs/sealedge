@@ -24,7 +24,7 @@ import numpy as np
 import pandas as pd
 
 from quant_lib.core._engine import fast_trade_loop, STRATEGY_PULLBACK_SNIPER
-from quant_lib.core._config import STATIC, DEFAULTS
+from quant_lib.core._config import STATIC, DEFAULTS, STRATEGY_FUNDING_RATE_CARRY
 from quant_lib.core._metrics import build_daily_matrices
 from quant_lib.core._testing import prob_sharpe_ratio, deflated_sharpe_ratio
 from quant_lib.core._portfolio import simulate_full_portfolio
@@ -312,6 +312,9 @@ def commit_to_holdout(
         # Add pullback-specific cols if needed
         if hypothesis.strategy_type == STRATEGY_PULLBACK_SNIPER:
             critical_cols.extend(["rsi_14", "bullish_reversal", "bearish_reversal"])
+        # Phase 2: funding_rate_carry requires funding_pct_rank to be non-NaN
+        if hypothesis.strategy_type == STRATEGY_FUNDING_RATE_CARRY:
+            critical_cols.extend(["funding_pct_rank"])
         df_clean = df.dropna(subset=critical_cols).copy()
 
         # Per-symbol seed offset prevents correlated cost noise across
@@ -324,6 +327,16 @@ def commit_to_holdout(
         rsi_14 = df_clean["rsi_14"].values if "rsi_14" in df_clean.columns else np.zeros(len(df_clean), dtype=np.float64)
         bullish_rev = df_clean["bullish_reversal"].values if "bullish_reversal" in df_clean.columns else np.zeros(len(df_clean), dtype=np.int32)
         bearish_rev = df_clean["bearish_reversal"].values if "bearish_reversal" in df_clean.columns else np.zeros(len(df_clean), dtype=np.int32)
+        # Phase 2: funding_rate_carry feature. For vol_compression and
+        # pullback_sniper, the strategy branch in fast_trade_loop never
+        # reads this array, but the @njit signature requires it. Use 0.5
+        # (neutral regime) as the safe default when the column is absent
+        # or NaN.
+        funding_pct_rank = (
+            df_clean["funding_pct_rank"].values
+            if "funding_pct_rank" in df_clean.columns
+            else np.full(len(df_clean), 0.5, dtype=np.float64)
+        )
 
         result = fast_trade_loop(
             df_clean["open"].values,
@@ -339,6 +352,7 @@ def commit_to_holdout(
             df_clean["vol_pct_rank"].values,
             df_clean["rvol"].values,
             df_clean["atr"].values,
+            funding_pct_rank,
             df_clean["funding_rate"].values,
             df_clean["macro_vol"].values,
             df_clean["macro_trend"].values,
@@ -359,6 +373,11 @@ def commit_to_holdout(
             1 if sp.get("allow_short", True) else 0,
             sym_params.get("rsi_oversold", 30.0),
             sym_params.get("rsi_overbought", 70.0),
+            # Phase 2: funding_rate_carry thresholds (safe defaults;
+            # commit.py currently exercises vol_compression and
+            # pullback_sniper only -- funding_pct_rank is constant 0.5
+            # above so these thresholds never trigger).
+            0.90, 0.40, 0.60,
             DEFAULTS["weekend_liquidity_penalty"],
             DEFAULTS["stress_test_multiplier"],
             random_draws,

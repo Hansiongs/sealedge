@@ -6,9 +6,10 @@ Extracted from Hans_Quant_Systems.py lines 656-967.
 This module contains the JIT-compiled trade loop. No dependencies on
 other core modules -- all parameters are passed explicitly as arrays/floats.
 
-Supports two strategies via strategy_type:
+Supports three strategies via strategy_type:
   - 0 = vol_compression_breakout (original)
   - 1 = pullback_sniper (RSI + reversal)
+  - 2 = funding_rate_carry (perp funding carry, mean-reversion)
 """
 
 import numpy as np
@@ -25,6 +26,7 @@ from typing import Tuple
 from quant_lib.core._config import (  # noqa: I001
     STRATEGY_VOL_COMPRESSION,
     STRATEGY_PULLBACK_SNIPER,
+    STRATEGY_FUNDING_RATE_CARRY,
 )
 
 
@@ -33,7 +35,7 @@ class EngineArgs:
     """Grouped arguments for :func:`fast_trade_loop`.
 
     Why this exists:
-        The underlying ``@njit`` function takes 32 positional parameters
+        The underlying ``@njit`` function takes 35 positional parameters
         (Numba does not support dataclass/object args). This dataclass
         captures the *natural groupings* -- market data, signal features,
         strategy params, cost model, trend-risk mults -- so call sites
@@ -48,14 +50,15 @@ class EngineArgs:
         (hh_20, ll_20, ema_200s)
     pullback_features : tuple of 3 ndarrays
         (rsi_14, bullish_reversal, bearish_reversal)
-    signal_features : tuple of 3 ndarrays
-        (vol_pct_rank, rvol, atrs)
+    signal_features : tuple of 4 ndarrays
+        (vol_pct_rank, rvol, atrs, funding_pct_rank)
     auxiliary_features : tuple of 5 ndarrays
         (funding_rates, macro_vols, macro_trends, is_weekends, is_funding_hours)
     strategy_type : int
-        0 = vol_compression, 1 = pullback_sniper.
-    thresholds : tuple of 5 floats
-        (vol_pct_thresh, rvol_thresh, rsi_oversold, rsi_overbought, _)
+        0 = vol_compression, 1 = pullback_sniper, 2 = funding_rate_carry.
+    thresholds : tuple of 8 floats
+        (vol_pct_thresh, rvol_thresh, rsi_oversold, rsi_overbought,
+         funding_entry_pct, funding_exit_low, funding_exit_high, _)
     integer_params : tuple of 4 ints
         (pullback_bars, bailout_bars, warmup_bars, _)
     exit_params : tuple of 2 floats
@@ -72,10 +75,10 @@ class EngineArgs:
     market_data: Tuple[ndarray, ndarray, ndarray, ndarray]
     channel_features: Tuple[ndarray, ndarray, ndarray]
     pullback_features: Tuple[ndarray, ndarray, ndarray]
-    signal_features: Tuple[ndarray, ndarray, ndarray]
+    signal_features: Tuple[ndarray, ndarray, ndarray, ndarray]
     auxiliary_features: Tuple[ndarray, ndarray, ndarray, ndarray, ndarray]
     strategy_type: int
-    thresholds: Tuple[float, float, float, float, float]
+    thresholds: Tuple[float, float, float, float, float, float, float, float]
     integer_params: Tuple[int, int, int, int]
     exit_params: Tuple[float, float]
     cost_model: Tuple[float, float, float]
@@ -87,15 +90,48 @@ class EngineArgs:
         """Expand to the positional-args tuple expected by fast_trade_loop.
 
         Order MUST match the @njit function signature exactly.
+
+        Backwards-compatibility (Phase 2 funding_rate_carry extension):
+        - ``signal_features`` accepts 3-tuple (legacy, no funding_pct_rank)
+          or 4-tuple (Phase 2+, with funding_pct_rank). When 3-tuple is
+          passed, ``funding_pct_rank`` defaults to a constant 0.5 array
+          (neutral funding regime -- never triggers entry/exit).
+        - ``thresholds`` accepts 5-tuple (legacy) or 8-tuple (Phase 2+,
+          with funding_entry_pct, funding_exit_low, funding_exit_high,
+          padding). When 5-tuple is passed, the three funding thresholds
+          default to safe neutral values (0.90, 0.40, 0.60).
         """
         opens, highs, lows, closes = self.market_data
         hh_20, ll_20, ema_200s = self.channel_features
         rsi_14, bullish_rev, bearish_rev = self.pullback_features
-        vol_pct_rank, rvol, atrs = self.signal_features
+        # signal_features: 3-tuple legacy or 4-tuple Phase 2+
+        if len(self.signal_features) == 4:
+            vol_pct_rank, rvol, atrs, funding_pct_rank = self.signal_features
+        else:
+            vol_pct_rank, rvol, atrs = self.signal_features
+            # Default: constant 0.5 (neutral funding regime).
+            # Used only by tests/legacy callers that haven't migrated
+            # to the Phase 2 4-tuple shape.
+            funding_pct_rank = np.full(
+                len(closes), 0.5, dtype=np.float64
+            )
         funding_rates, macro_vols, macro_trends, is_weekends, is_funding_hours = (
             self.auxiliary_features
         )
-        v_thresh, r_thresh, rsi_oversold, rsi_overbought, _ = self.thresholds
+        # thresholds: 5-tuple legacy or 8-tuple Phase 2+
+        if len(self.thresholds) == 8:
+            (v_thresh, r_thresh, rsi_oversold, rsi_overbought,
+             funding_entry_pct, funding_exit_low, funding_exit_high, _) = (
+                self.thresholds
+            )
+        else:
+            v_thresh, r_thresh, rsi_oversold, rsi_overbought, _ = self.thresholds
+            # Defaults: safe neutral funding thresholds
+            # (0.90 entry, 0.40-0.60 neutral zone). Tests using the legacy
+            # 5-tuple shape continue to work without modification.
+            funding_entry_pct = 0.90
+            funding_exit_low = 0.40
+            funding_exit_high = 0.60
         pullback_bars, bailout_bars, warmup_bars, _ = self.integer_params
         trail_atr, sl_mult = self.exit_params
         fee_taker, weekend_penalty, stress_mult = self.cost_model
@@ -105,7 +141,7 @@ class EngineArgs:
             opens, highs, lows, closes,
             hh_20, ll_20, ema_200s,
             rsi_14, bullish_rev, bearish_rev,
-            vol_pct_rank, rvol, atrs,
+            vol_pct_rank, rvol, atrs, funding_pct_rank,
             funding_rates, macro_vols, macro_trends, is_weekends, is_funding_hours,
             self.strategy_type,
             v_thresh, r_thresh,
@@ -115,6 +151,7 @@ class EngineArgs:
             fee_taker,
             use_rvol, use_ema, allow_long, allow_short,
             rsi_oversold, rsi_overbought,
+            funding_entry_pct, funding_exit_low, funding_exit_high,
             weekend_penalty, stress_mult,
             self.random_draws,
             trend_aligned_mult, trend_counter_mult,
@@ -136,6 +173,7 @@ def fast_trade_loop(
     vol_pct_rank: ndarray,
     rvol: ndarray,
     atrs: ndarray,
+    funding_pct_rank: ndarray,
     funding_rates: ndarray,
     macro_vols: ndarray,
     macro_trends: ndarray,
@@ -156,6 +194,9 @@ def fast_trade_loop(
     allow_short: int,
     rsi_oversold: float,
     rsi_overbought: float,
+    funding_entry_pct: float,
+    funding_exit_low: float,
+    funding_exit_high: float,
     weekend_penalty: float,
     stress_mult: float,
     random_draws: ndarray,
@@ -203,6 +244,13 @@ def fast_trade_loop(
                 if not exit_triggered and strategy_type == STRATEGY_PULLBACK_SNIPER:
                     if highs[i] >= hh_20[i]:
                         exit_triggered, exit_price_val = True, hh_20[i]
+                # Neutral-zone exit for funding_rate_carry: exit when
+                # funding_pct_rank returns to neutral [exit_low, exit_high].
+                # We longed when funding was low; now funding has reverted
+                # to neutral -- our carry thesis is realized.
+                if not exit_triggered and strategy_type == STRATEGY_FUNDING_RATE_CARRY:
+                    if funding_pct_rank[i] >= funding_exit_low and funding_pct_rank[i] <= funding_exit_high:
+                        exit_triggered, exit_price_val = True, closes[i]
             else:
                 lowest_price = min(lowest_price, lows[i])
                 sl_level = min(sl_level, lowest_price + (atrs[i] * trail_atr))
@@ -212,6 +260,12 @@ def fast_trade_loop(
                 if not exit_triggered and strategy_type == STRATEGY_PULLBACK_SNIPER:
                     if lows[i] <= ll_20[i]:
                         exit_triggered, exit_price_val = True, ll_20[i]
+                # Neutral-zone exit for funding_rate_carry (short side):
+                # we shorted when funding was high; funding has now
+                # reverted to neutral -- carry thesis realized.
+                if not exit_triggered and strategy_type == STRATEGY_FUNDING_RATE_CARRY:
+                    if funding_pct_rank[i] >= funding_exit_low and funding_pct_rank[i] <= funding_exit_high:
+                        exit_triggered, exit_price_val = True, closes[i]
             if not exit_triggered and bars_held >= bailout_bars:
                 exit_triggered, exit_price_val = True, closes[i]
 
@@ -439,6 +493,79 @@ def fast_trade_loop(
                                     base_entry_slip * random_stress * pen_en
                                 )
                                 trend_aligned = (macro_trends[entry_bar_idx] == -1)
+                                current_trend_mult = (
+                                    trend_aligned_mult if trend_aligned else trend_counter_mult
+                                )
+                elif strategy_type == STRATEGY_FUNDING_RATE_CARRY:
+                    # Funding rate carry: enter when funding_pct_rank crosses
+                    # an extreme threshold, exit when it reverts to neutral
+                    # zone. No setup/pullback wait (single-bar entry, like
+                    # pullback_sniper). The neutral-zone exit is the funding-
+                    # rate analog of pullback_sniper's TP bracket.
+                    #
+                    # Entry conditions:
+                    #   funding_pct_rank[i] > funding_entry_pct -> SHORT
+                    #     (longs are paying; we sell carry to them)
+                    #   funding_pct_rank[i] < (1 - funding_entry_pct) -> LONG
+                    #     (shorts are paying; we buy carry from them)
+                    is_macro_safe = True
+                    if allow_short == 1 and funding_pct_rank[i] > funding_entry_pct:
+                        is_ema_ok = closes[i] < ema_200s[i] if use_ema == 1 else True
+                        if is_ema_ok and is_macro_safe:
+                            if i + 1 < n:
+                                trade_state = -1
+                                entry_price = closes[i]
+                                sl_dist_val = atrs[i] * sl_mult
+                                sl_level = entry_price + sl_dist_val
+                                highest_price = lowest_price = entry_price
+                                entry_bar_idx = i
+                                base_entry_slip = min(
+                                    max(
+                                        0.010 * ((atrs[i] / entry_price) * 100.0 / 0.5),
+                                        0.005,
+                                    ),
+                                    0.10,
+                                )
+                                random_stress = 1.0 + (
+                                    random_draws[rng_idx % max_draws] * (stress_mult - 1.0)
+                                )
+                                rng_idx += 1
+                                pen_en = weekend_penalty if is_weekends[i] == 1 else 1.0
+                                current_entry_slip = (
+                                    base_entry_slip * random_stress * pen_en
+                                )
+                                # Shorts profit in downtrend (macro=-1)
+                                trend_aligned = (macro_trends[entry_bar_idx] == -1)
+                                current_trend_mult = (
+                                    trend_aligned_mult if trend_aligned else trend_counter_mult
+                                )
+                    elif allow_long == 1 and funding_pct_rank[i] < (1.0 - funding_entry_pct):
+                        is_ema_ok = closes[i] > ema_200s[i] if use_ema == 1 else True
+                        if is_ema_ok and is_macro_safe:
+                            if i + 1 < n:
+                                trade_state = 1
+                                entry_price = closes[i]
+                                sl_dist_val = atrs[i] * sl_mult
+                                sl_level = entry_price - sl_dist_val
+                                highest_price = lowest_price = entry_price
+                                entry_bar_idx = i
+                                base_entry_slip = min(
+                                    max(
+                                        0.010 * ((atrs[i] / entry_price) * 100.0 / 0.5),
+                                        0.005,
+                                    ),
+                                    0.10,
+                                )
+                                random_stress = 1.0 + (
+                                    random_draws[rng_idx % max_draws] * (stress_mult - 1.0)
+                                )
+                                rng_idx += 1
+                                pen_en = weekend_penalty if is_weekends[i] == 1 else 1.0
+                                current_entry_slip = (
+                                    base_entry_slip * random_stress * pen_en
+                                )
+                                # Longs profit in uptrend (macro=1)
+                                trend_aligned = (macro_trends[entry_bar_idx] == 1)
                                 current_trend_mult = (
                                     trend_aligned_mult if trend_aligned else trend_counter_mult
                                 )

@@ -229,6 +229,7 @@ def make_engine_arrays(
     macro_trends: Optional[np.ndarray] = None,
     is_weekends: Optional[np.ndarray] = None,
     is_funding_hours: Optional[np.ndarray] = None,
+    funding_pct_rank: Optional[np.ndarray] = None,
 ) -> dict:
     """Factory for engine input arrays.
 
@@ -279,6 +280,12 @@ def make_engine_arrays(
         is_weekends = rng.integers(0, 2, n).astype(np.int32)
     if is_funding_hours is None:
         is_funding_hours = rng.integers(0, 2, n).astype(np.int32)
+    if funding_pct_rank is None:
+        # Synthetic percentile-rank in [0, 1] -- uniformly distributed for
+        # test isolation (tests that need a specific distribution override
+        # this kwarg). Real ``funding_pct_rank`` is a rolling percentile of
+        # funding_rates; for unit-test purposes uniform samples suffice.
+        funding_pct_rank = rng.uniform(0.0, 1.0, n).astype(np.float64)
 
     return {
         "opens": opens,
@@ -299,6 +306,7 @@ def make_engine_arrays(
         "macro_trends": macro_trends,
         "is_weekends": is_weekends,
         "is_funding_hours": is_funding_hours,
+        "funding_pct_rank": funding_pct_rank,
     }
 
 
@@ -627,6 +635,7 @@ def make_engine_args(n: int = 1000, seed: int = HOURLY_SEED) -> "EngineArgs":
         ),
         signal_features=(
             arrays["vol_pct_rank"], arrays["rvol"], arrays["atrs"],
+            arrays["funding_pct_rank"],
         ),
         auxiliary_features=(
             arrays["funding_rates"], arrays["macro_vols"],
@@ -634,7 +643,7 @@ def make_engine_args(n: int = 1000, seed: int = HOURLY_SEED) -> "EngineArgs":
             arrays["is_funding_hours"],
         ),
         strategy_type=0,
-        thresholds=(0.20, 2.5, 30.0, 70.0, 0.0),
+        thresholds=(0.20, 2.5, 30.0, 70.0, 0.90, 0.40, 0.60, 0.0),
         integer_params=(5, 36, 0, 0),
         exit_params=(3.0, 1.5),
         cost_model=(0.05, 2.0, DEFAULTS["stress_test_multiplier"]),

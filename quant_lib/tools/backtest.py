@@ -159,6 +159,10 @@ def run_trade_loop(
             df_clean["vol_pct_rank"].values,
             df_clean["rvol"].values,
             df_clean["atr"].values,
+            # Phase 2: funding_pct_rank slot (safe default 0.5 = neutral).
+            # backtest.py currently exercises vol_compression and
+            # pullback_sniper; the funding-carry branch never triggers.
+            df_clean["funding_pct_rank"].values if "funding_pct_rank" in df_clean.columns else np.full(len(df_clean), 0.5, dtype=np.float64),
         ),
         auxiliary_features=(
             df_clean["funding_rate"].values,
@@ -173,7 +177,8 @@ def run_trade_loop(
             DEFAULTS["fixed_rvol_thresh"],
             rsi_oversold,
             rsi_overbought,
-            0.0,  # unused slot (kept for forward-compat)
+            # Phase 2: funding_rate_carry thresholds (safe defaults).
+            0.90, 0.40, 0.60, 0.0,
         ),
         integer_params=(
             pullback_bars,

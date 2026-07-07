@@ -13,6 +13,7 @@ from quant_lib.core._config import (
     WARMUP_BARS,
     STRATEGY_VOL_COMPRESSION,
     STRATEGY_PULLBACK_SNIPER,
+    STRATEGY_FUNDING_RATE_CARRY,
 )
 from quant_lib.core._logging import log
 
@@ -307,11 +308,30 @@ def prepare_data_with_max_time(
             (df["close"] < df["open"]) & (df["close"] < df["close"].shift(1))
         ).astype(np.int32)
     else:
-        # vol_compression doesn't need these -- leave None/NaN
+        # vol_compression and funding_rate_carry don't need these -- leave None/NaN
         df["rsi_14"] = np.nan
         df["ema_20"] = np.nan
         df["bullish_reversal"] = 0
         df["bearish_reversal"] = 0
+
+    # -- Funding rate carry features (only if strategy_type=2) --
+    if strategy_type == STRATEGY_FUNDING_RATE_CARRY:
+        # funding_pct_rank: rolling 720-bar (~30 days) percentile rank of
+        # funding_rate. shift(1) ensures funding_pct_rank[i] uses data
+        # up to bar i-1, preventing lookahead at entry decision bar.
+        #
+        # Funding rate is constant between funding events (0/8/16 UTC),
+        # so rolling percentile is computed over a step-function series;
+        # pct rank at non-funding bars equals the last funding bar's rank.
+        _FUNDING_PCT_WINDOW = 720  # 30 days * 24 hourly bars
+        funding_pct_rank_raw = (
+            df["funding_rate"]
+            .rolling(_FUNDING_PCT_WINDOW, min_periods=24)
+            .rank(pct=True)
+        )
+        df["funding_pct_rank"] = funding_pct_rank_raw.shift(1).astype(np.float32)
+    else:
+        df["funding_pct_rank"] = np.nan
 
     # -- Gap detection (before ffill) --
     gap_end_idxs = []
@@ -319,6 +339,8 @@ def prepare_data_with_max_time(
     signal_cols = ["vol_pct_rank", "rvol", "atr", "hh_20", "ll_20", "ema_200"]
     if strategy_type == STRATEGY_PULLBACK_SNIPER:
         signal_cols.extend(["rsi_14", "ema_20", "bullish_reversal", "bearish_reversal"])
+    if strategy_type == STRATEGY_FUNDING_RATE_CARRY:
+        signal_cols.append("funding_pct_rank")
     if len(df) > 1:
         time_diffs = df["time"].diff().dropna()
         median_diff = time_diffs.median()

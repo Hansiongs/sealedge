@@ -43,7 +43,9 @@ def _make_arrays(n=1000, seed=42):
         "macro_trends": rng.choice([-1, 1], n).astype(np.int32),
         "is_weekends": rng.integers(0, 2, n).astype(np.int32),
         "is_funding_hours": rng.integers(0, 2, n).astype(np.int32),
-    }
+        # Phase 2: see test_engine.py for rationale.
+        "funding_pct_rank": rng.uniform(0.0, 1.0, n).astype(np.float64),
+        }
 
 
 class TestPullbackSniper:
@@ -67,6 +69,12 @@ class TestPullbackSniper:
             allow_short=1,
             rsi_oversold=30.0,
             rsi_overbought=70.0,
+            # Phase 2: funding_rate_carry thresholds (tests here don't
+            # exercise funding-carry strategy but the @njit signature
+            # requires these kwargs).
+            funding_entry_pct=0.90,
+            funding_exit_low=0.40,
+            funding_exit_high=0.60,
             weekend_penalty=2.0,
             stress_mult=DEFAULTS["stress_test_multiplier"],
             random_draws=np.random.default_rng(0).random(size=1000).astype(np.float64),
@@ -96,6 +104,12 @@ class TestPullbackSniper:
             allow_short=0,  # only long
             rsi_oversold=30.0,
             rsi_overbought=70.0,
+            # Phase 2: funding_rate_carry thresholds (tests here don't
+            # exercise funding-carry strategy but the @njit signature
+            # requires these kwargs).
+            funding_entry_pct=0.90,
+            funding_exit_low=0.40,
+            funding_exit_high=0.60,
             weekend_penalty=2.0,
             stress_mult=DEFAULTS["stress_test_multiplier"],
             random_draws=np.random.default_rng(0).random(size=2000).astype(np.float64),
@@ -127,6 +141,12 @@ class TestPullbackSniper:
             allow_short=1,  # only short
             rsi_oversold=30.0,
             rsi_overbought=70.0,
+            # Phase 2: funding_rate_carry thresholds (tests here don't
+            # exercise funding-carry strategy but the @njit signature
+            # requires these kwargs).
+            funding_entry_pct=0.90,
+            funding_exit_low=0.40,
+            funding_exit_high=0.60,
             weekend_penalty=2.0,
             stress_mult=DEFAULTS["stress_test_multiplier"],
             random_draws=np.random.default_rng(0).random(size=2000).astype(np.float64),
@@ -291,6 +311,12 @@ class TestStrategyDispatch:
             allow_short=1,
             rsi_oversold=30.0,
             rsi_overbought=70.0,
+            # Phase 2: funding_rate_carry thresholds (tests here don't
+            # exercise funding-carry strategy but the @njit signature
+            # requires these kwargs).
+            funding_entry_pct=0.90,
+            funding_exit_low=0.40,
+            funding_exit_high=0.60,
             weekend_penalty=2.0,
             stress_mult=DEFAULTS["stress_test_multiplier"],
             random_draws=np.random.default_rng(0).random(size=1000).astype(np.float64),
@@ -314,6 +340,12 @@ class TestStrategyDispatch:
             allow_short=1,
             rsi_oversold=30.0,
             rsi_overbought=70.0,
+            # Phase 2: funding_rate_carry thresholds (tests here don't
+            # exercise funding-carry strategy but the @njit signature
+            # requires these kwargs).
+            funding_entry_pct=0.90,
+            funding_exit_low=0.40,
+            funding_exit_high=0.60,
             weekend_penalty=2.0,
             stress_mult=DEFAULTS["stress_test_multiplier"],
             random_draws=np.random.default_rng(0).random(size=1000).astype(np.float64),
