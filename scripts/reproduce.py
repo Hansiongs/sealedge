@@ -323,6 +323,8 @@ def _write_markdown(
         # Format numerics (3 d.p. floats) for readability.
         def fmt(v: Any) -> str:
             if isinstance(v, float):
+                if v != v:  # NaN check
+                    return "nan"
                 return f"{v:.4f}"
             return str(v)
         lines.append(
