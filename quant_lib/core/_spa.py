@@ -492,15 +492,49 @@ def portfolio_spa(
         f"anchor_ratio={anchor_ratio:.1f}%"
     )
 
-    # Degenerate anchor guard
+    # Degenerate anchor guard: only short-circuit when the legacy
+    # circular-permutation path is what the caller will use. The Hansen
+    # path (numpy-only, block-bootstrap on per-trial IS losses) is
+    # independent of anchor span -- its block length is set per-trial
+    # from n_k^(1/3) -- so it can still produce a valid p-value even
+    # when the legacy anchor is degenerate. Run Hansen first when
+    # eligible, then short-circuit the legacy path on degenerate.
+    hansen_stats: dict | None = None
+    if (
+        recenter_policy == "hansen_literal"
+        and return_statistics
+        and trial_r_nets is not None
+        and len(trial_r_nets) > 0
+    ):
+        observed_r_nets = np.asarray(
+            [float(t.get("r_net", float("nan"))) for t in observed_trades],
+            dtype=float,
+        )
+        # FRESH generator -- reusing rng_spa would shift the legacy anchor
+        # distribution and break the spy test's ``2*n_iters`` invariant
+        # under ``trial_r_nets=None`` (the spy asserts exact simulate_*
+        # call counts driven by rng_spa).
+        rng_hansen = np.random.default_rng(rng_seed + 1)
+        _, hansen_stats = _hansen_spa_p_value(
+            observed_r_nets, trial_r_nets, n_iters, rng_hansen, float("nan")
+        )
+
+    # Degenerate anchor guard -- legacy circular-permutation path only.
+    # When Hansen produced a valid p above, callers (candidate.py) pick
+    # ``hansen_stats["p_hansen"]`` over ``p_value``, so the legacy NaN
+    # here is harmless for the opt-in caller.
     if total_hours > 0 and span_hours >= total_hours * 0.8:
         log.warning(
             f"SPA DEGENERATE: anchor_ratio={anchor_ratio:.0f}% "
             f"(span={span_hours:.0f}h / total={total_hours:.0f}h >= 80%). "
-            f"Circular permutation creates near-identical null -> "
-            f"p-value UNRELIABLE. Returning NaN."
+            f"Legacy circular permutation creates near-identical null -> "
+            f"p-value UNRELIABLE. Returning NaN for legacy path. "
+            f"(Hansen path was attempted first; check hansen_stats.)"
         )
-        return _spa_finalize_return(observed_final_equity, random_equities, float("nan"), return_statistics)
+        return _spa_finalize_return(
+            observed_final_equity, random_equities, float("nan"),
+            return_statistics, stats=hansen_stats,
+        )
 
     times_hours_map = {
         sym: (asset_data[sym]["time"].values - global_start_np) / np.timedelta64(1, "h")
@@ -647,32 +681,14 @@ def portfolio_spa(
     # Hansen-literal SPA null (claim #3 Blocker A). Active only when the
     # caller opts in via ``recenter_policy="hansen_literal"`` AND supplies
     # ``trial_r_nets`` (the K IS PnL arrays) AND ``return_statistics=True``.
-    # When inactive (the legacy default) ``p_value`` IS the legacy circular-
-    # permutation p -- nobody downstream sees any change. When active, the
-    # 3-tuple p_value stays the legacy p (legacy 3-tuple contract intact);
-    # the Hansen p lives in ``hansen_stats["p_hansen"]`` for the 4-tuple
-    # path (candidate.py picks it up). On any NaN-safe fallback the Hansen
-    # p degrades to ``p_value`` (== p_naive) so opt-in callers never crash.
-    hansen_stats: dict | None = None
-    if (
-        recenter_policy == "hansen_literal"
-        and return_statistics
-        and trial_r_nets is not None
-        and len(trial_r_nets) > 0
-    ):
-        observed_r_nets = np.asarray(
-            [float(t.get("r_net", float("nan"))) for t in observed_trades],
-            dtype=float,
-        )
-        # FRESH generator — reusing rng_spa would shift the legacy anchor
-        # distribution and break the spy test's ``2*n_iters`` invariant
-        # under ``trial_r_nets=None`` (the spy asserts exact simulate_*
-        # call counts driven by rng_spa).
-        rng_hansen = np.random.default_rng(rng_seed + 1)
-        _, hansen_stats = _hansen_spa_p_value(
-            observed_r_nets, trial_r_nets, n_iters, rng_hansen, p_value
-        )
-
+    # The actual ``_hansen_spa_p_value`` call happens EARLIER in this
+    # function (before the degenerate-anchor guard) so the Hansen
+    # result is available even when the legacy circular-permutation
+    # path returns NaN. When Hansen was attempted, ``hansen_stats`` is
+    # non-None and the caller's 4-tuple unpack pulls
+    # ``hansen_stats["p_hansen"]`` instead of the legacy ``p_value``.
+    # On any NaN-safe fallback the Hansen p degrades to the legacy
+    # p_value so opt-in callers never crash.
     return _spa_finalize_return(
         observed_final_equity, random_equities, p_value, return_statistics,
         stats=hansen_stats,
