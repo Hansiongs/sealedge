@@ -515,7 +515,11 @@ class TestAutoDiscovery:
         assert cfg.strategy_type == "vol_compression"
         assert cfg.strategy_type_int == 0
         assert "Volatility compression" in cfg.hypothesis.mechanism
-        assert cfg.period.train_start == "2020-01-01"
+        # train_start pushed to 2021-07-01 to satisfy universe filter's
+        # 180-day min_age_days requirement for SOLUSDT (perp data
+        # starts 2021-01-01). See experiment file comments for
+        # rationale.
+        assert cfg.period.train_start == "2021-07-01"
         assert cfg.period.train_end == "2025-12-31"
         assert "BTCUSDT" in cfg.universe.symbols
         assert "ETHUSDT" in cfg.universe.symbols
@@ -526,14 +530,15 @@ class TestAutoDiscovery:
         assert cfg.strategy_type == "pullback_sniper"
         assert cfg.strategy_type_int == 1
         assert "RSI" in cfg.hypothesis.mechanism
-        assert cfg.period.train_start == "2020-01-01"
+        # train_start pushed to 2021-07-01 (see vol_compression_v1_details).
+        assert cfg.period.train_start == "2021-07-01"
         assert "BTCUSDT" in cfg.universe.symbols
 
     def test_auto_resolve_holdout(self):
         """vol_compression_v1 has no explicit holdout, should auto-resolve POST-training."""
         cfg = get("vol_compression_v1")
         ts, te, hs, he = cfg.period.resolve()
-        assert ts == "2020-01-01"
+        assert ts == "2021-07-01"
         assert te == "2025-12-31"
         # Post-training convention: [train_end + 1d, train_end + 6mo + 1d]
         # 2025-12-31 + 1d = 2026-01-01; +6mo = 2026-07-01
