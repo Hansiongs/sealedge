@@ -70,7 +70,15 @@ lint:  ## Run linter (ruff) and type-checker (mypy)
 format:  ## Auto-format code (ruff)
 	ruff format quant_lib/
 
-reproduce:  ## Run full pipeline to reproduce paper results (EXP=vol_compression_v1)
+reproduce:  ## Reproduce paper results (all strategies, JSON+MD output, ~1h target)
+	@echo "==> Running scripts/reproduce.py (all 3 strategies, n_spa_iters=2000)..."
+	@python scripts/reproduce.py
+
+reproduce-fast:  ## Fast reproduction (n_spa_iters=500, sub-1-hour target)
+	@echo "==> Running scripts/reproduce_fast.py (all 3 strategies, n_spa_iters=500)..."
+	@python scripts/reproduce_fast.py
+
+reproduce-one:  ## Run single experiment (legacy, single-EXP variant)
 	@if [ -z "$(EXP)" ]; then \
 		echo "==> No EXP specified; using default: vol_compression_v1"; \
 		EXP=vol_compression_v1; \
