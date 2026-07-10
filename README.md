@@ -346,7 +346,7 @@ opaque to coverage tooling.
 ```bash
 # Clone the repo
 git clone https://github.com/Hansiongs/sealedge.git
-cd quant_lib
+cd sealedge
 
 # Install with dev dependencies
 make install-dev

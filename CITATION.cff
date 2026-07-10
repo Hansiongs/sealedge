@@ -1,19 +1,23 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 type: software
-title: "quant_lib: Honest backtesting for crypto strategies"
+title: "sealedge: Honest backtesting for crypto strategies"
 abstract: >-
   A quantitative trading backtesting framework enforcing methodological
   discipline (no look-ahead, sealed holdout, multiple-testing correction,
   Probabilistic Sharpe Ratio, Superior Predictive Ability test) so that
-  reported results can be defended to a skeptical reviewer.
+  reported results can be defended to a skeptical reviewer. Distributed
+  on PyPI as sealedge; importable Python package name remains quant_lib.
 authors:
   - family-names: "Winarto"
     given-names: "Hansen"
+    email: "hansenwinarto@binus.ac.id"
+    affiliation: "BINUS Online Learning, Bina Nusantara University"
 version: 0.5.1
-date-released: 2026-06-30
-license: MIT
-repository-code: "https://github.com/Hansiongs/hans-backtest"
+date-released: "2026-07-05"
+license: GPL-3.0-or-later
+repository-code: "https://github.com/Hansiongs/sealedge"
+url: "https://github.com/Hansiongs/sealedge"
 keywords:
   - quantitative-finance
   - backtesting
@@ -22,3 +26,4 @@ keywords:
   - reproducible-research
   - walk-forward-analysis
   - holdout-validation
+  - sealedge

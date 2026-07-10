@@ -1,0 +1,84 @@
+{
+  "metadata": {
+    "captured_at_utc": "2026-07-10T03:14:59.939036+00:00",
+    "python_version": "3.14.4",
+    "platform": "Windows-10-10.0.19045-SP0",
+    "system": "Windows",
+    "machine": "AMD64",
+    "quant_lib_version": "0.5.1",
+    "global_seed": 42,
+    "git_commit": "1e85e1d555cb36aaad72bde70a4317ca1e65f699",
+    "dependency_versions": {
+      "numpy": "2.4.6",
+      "pandas": "3.0.3",
+      "numba": "0.65.1",
+      "scipy": "1.17.1",
+      "optuna": "4.9.0"
+    }
+  },
+  "config": {
+    "strategies": [
+      "vol_compression_v1",
+      "pullback_sniper_rsi",
+      "funding_rate_carry"
+    ],
+    "n_spa_iters": 2000,
+    "cache_dir": "C:\\Users\\Administrator\\Desktop\\sealedge\\data_cache"
+  },
+  "strategies": {
+    "vol_compression_v1": {
+      "status": "success",
+      "elapsed_seconds": 690.6,
+      "metrics": {
+        "experiment": "vol_compression_v1",
+        "n_oos_trades": 438,
+        "n_executed": 399,
+        "n_rejected": 39,
+        "final_equity": 892.8402862573811,
+        "spa_p_value": 1.0,
+        "narrowed_symbols": [
+          "BTCUSDT",
+          "ETHUSDT",
+          "SOLUSDT"
+        ],
+        "spa_naive_p_value": NaN
+      }
+    },
+    "pullback_sniper_rsi": {
+      "status": "success",
+      "elapsed_seconds": 345.32,
+      "metrics": {
+        "experiment": "pullback_sniper_rsi",
+        "n_oos_trades": 180,
+        "n_executed": 140,
+        "n_rejected": 40,
+        "final_equity": 805.8595212101233,
+        "spa_p_value": 0.9300349825087456,
+        "narrowed_symbols": [
+          "BTCUSDT",
+          "ETHUSDT",
+          "SOLUSDT"
+        ],
+        "spa_naive_p_value": NaN
+      }
+    },
+    "funding_rate_carry": {
+      "status": "success",
+      "elapsed_seconds": 2138.06,
+      "metrics": {
+        "experiment": "funding_rate_carry",
+        "n_oos_trades": 3446,
+        "n_executed": 1517,
+        "n_rejected": 1929,
+        "final_equity": 503.94751110895936,
+        "spa_p_value": 0.0004997501249375312,
+        "narrowed_symbols": [
+          "BTCUSDT",
+          "ETHUSDT",
+          "SOLUSDT"
+        ],
+        "spa_naive_p_value": NaN
+      }
+    }
+  }
+}

@@ -46,13 +46,14 @@ The framework must defend these four claims in review:
 1. **Sealed-holdout discipline** via HMAC-SHA256 (data hash + state
    integrity — see `quant_lib/audit/holdout.py`).
 2. **PSR / Deflated-SR** for multiple-testing correction.
-3. **SPA (White Reality Check)** for statistical significance — two
-   coexisting nulls: legacy uniform time-anchored permutation
-   (regression-tested 3-tuple contract, default) and opt-in
-   Hansen-literal (Politis–Romano stationary block bootstrap,
+3. **SPA** for statistical significance — two coexisting nulls:
+   legacy uniform time-anchored permutation (regression-tested
+   3-tuple contract, default; Phipson & Smyth 2010 add-one) and
+   opt-in Hansen-literal (Politis–Romano stationary block bootstrap,
    Hansen 2005 Eq.7 recenter + Eq.8 cross-strategy max-stat — the
    actual multiple-testing correction that the legacy path lacked).
-   See `docs/methodology.md §6` for the exact-null spec, four
+   Explore path uses `recenter_policy="hansen_literal"`. See
+   `docs/methodology.md §6` for the exact-null spec, four
    paper-disclosed divergences, and three user-accepted caveats.
 4. **Deterministic walk-forward analysis** with reproducible RNG.
 
