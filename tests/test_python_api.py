@@ -83,23 +83,14 @@ class TestErrorHandling:
         with pytest.raises(KeyError):
             run_commit("definitely_not_a_real_experiment_xyz")
 
-    def test_run_explore_existing_experiment_runs(self):
-        """run_explore with registered experiment (vol_compression_v1) attempts to run.
+    def test_run_explore_existing_experiment_is_registered(self):
+        """Paper strategies are registered so run_explore can dispatch by name.
 
-        NOTE: This test may take long or fail on environments without
-        cached data. We only verify the call dispatches correctly.
+        Does not call run_explore end-to-end (tens of minutes / data-heavy).
+        Full pipeline coverage: scripts/reproduce.py + output_paper_grade/.
         """
-        # Just verify the function can be called without import errors
-        # (the actual run may need network/data which we don't mock here)
-        # Verify the function signature accepts a string
-        try:
-            result = run_explore("vol_compression_v1")
-            # If it succeeded, verify result structure
-            assert isinstance(result, dict)
-            assert "experiment" in result
-        except Exception as e:
-            # If it failed (e.g., no data), we still verify the error
-            # is NOT a programming error
-            assert not isinstance(e, (ImportError, AttributeError, TypeError)), (
-                f"run_explore should not fail with programming error: {e}"
-            )
+        from quant_lib.experiments import exists
+
+        assert exists("vol_compression_v1")
+        assert exists("pullback_sniper_rsi")
+        assert exists("funding_rate_carry")
