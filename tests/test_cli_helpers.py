@@ -46,6 +46,7 @@ class TestLooksLikeAbsolute:
         assert explore_absolute("subdir/report.html") is False
         assert commit_absolute("subdir/report.html") is False
 
+    @pytest.mark.skipif(os.name != "nt", reason="Windows-only absolute path test")
     def test_absolute_windows_path(self):
         assert explore_absolute("C:\\Users\\report.html") is True
         assert commit_absolute("C:\\Users\\report.html") is True
