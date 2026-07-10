@@ -22,17 +22,17 @@ script is designed to be:
   pipeline). Holdout seal is NOT broken. Reviewer can re-run on their
   own machine and confirm identical numbers.
 
-The ``fast`` variant in ``scripts/reproduce_fast.py`` reduces ``n_spa_iters``
-to 500 (vs 2000 default) for faster iteration at the cost of slightly
-noisier p-values.
+Paper-grade default is ``n_spa_iters=2000`` (no reduced-iter fast variant).
+For a shorter smoke test, run a single strategy first; SPA precision is
+unchanged.
 
 Usage
 -----
 ::
 
-    python scripts/reproduce.py                 # full reproduction (~1h target)
+    python scripts/reproduce.py                 # full pipeline (~50 min–2.5 h)
     python scripts/reproduce.py --output-dir /tmp/jss-rep
-    python scripts/reproduce.py --strategies vol_compression_v1 pullback_sniper_rsi
+    python scripts/reproduce.py --strategies vol_compression_v1  # single-strategy smoke
 
 Output
 ------
@@ -343,8 +343,10 @@ def _write_markdown(
         f"global seed ({meta['global_seed']}) and dependency versions.\n"
     )
     lines.append(
-        "* For fast iteration (sacrificing SPA precision), use "
-        "`scripts/reproduce_fast.py` which reduces `n_spa_iters` to 500.\n"
+        "* Paper-grade default is `n_spa_iters=2000`. For a shorter smoke "
+        "test with the same SPA precision, run a single strategy: "
+        "`python scripts/reproduce.py --strategies vol_compression_v1` "
+        "(or `make reproduce-one EXP=vol_compression_v1`).\n"
     )
 
     out_path.write_text("\n".join(lines))
