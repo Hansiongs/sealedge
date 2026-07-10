@@ -1,4 +1,4 @@
-.PHONY: help install install-dev test test-fast test-parallel test-cov test-bench test-bench-compare test-bench-save bench-clean lint lint-ruff lint-mypy format clean reproduce docs-serve docs-build mutate mutate-fast mutate-stats mutate-show mutate-clean
+.PHONY: help install install-dev test test-fast test-parallel test-cov test-bench test-bench-compare test-bench-save bench-clean lint lint-ruff lint-mypy format clean reproduce reproduce-one docs-serve docs-build mutate mutate-fast mutate-stats mutate-show mutate-clean
 
 help:  ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -70,28 +70,18 @@ lint:  ## Run linter (ruff) and type-checker (mypy)
 format:  ## Auto-format code (ruff)
 	ruff format quant_lib/
 
-reproduce:  ## Reproduce paper results (all strategies, JSON+MD output, ~1h target)
+reproduce:  ## Reproduce paper results (all strategies, n_spa_iters=2000, paper-grade)
 	@echo "==> Running scripts/reproduce.py (all 3 strategies, n_spa_iters=2000)..."
+	@echo "    Paper-grade: ~50 min per strategy, ~2.5 h total on a single machine."
 	@python scripts/reproduce.py
 
-reproduce-fast:  ## Fast reproduction (n_spa_iters=500, sub-1-hour target)
-	@echo "==> Running scripts/reproduce_fast.py (all 3 strategies, n_spa_iters=500)..."
-	@python scripts/reproduce_fast.py
-
-reproduce-one:  ## Run single experiment (legacy, single-EXP variant)
+reproduce-one:  ## Reproduce single experiment (smoke test; same n_spa_iters=2000)
+	@echo "==> Running single strategy (e.g., make reproduce-one EXP=vol_compression_v1)..."
 	@if [ -z "$(EXP)" ]; then \
-		echo "==> No EXP specified; using default: vol_compression_v1"; \
-		EXP=vol_compression_v1; \
-	fi
-	@if ! python -c "from quant_lib.experiments import all_experiments; assert '$$EXP' in [e.name for e in all_experiments()]" 2>/dev/null; then \
-		echo "ERROR: experiment '$$EXP' is not registered. Run 'quant_exp list' to see available experiments."; \
+		echo "ERROR: specify EXP (e.g., EXP=vol_compression_v1)"; \
 		exit 1; \
 	fi
-	@echo "==> Running explore (Phase 0-3) for experiment '$$EXP'..."
-	@python -c "from quant_lib import run_explore; r = run_explore('$$EXP'); print('SPA p-value:', r['spa_p_value']); print('Final equity:', r['final_equity'])"
-	@echo ""
-	@echo "==> Running commit (Phase 4) for experiment '$$EXP'..."
-	@python -c "from quant_lib import run_commit; r = run_commit('$$EXP'); print('Final equity:', r.final_equity); print('PSR:', r.psr); print('Seal broken:', r.seal_broken)"
+	@python scripts/reproduce.py --strategies $(EXP)
 
 docs-serve:  ## Serve documentation locally (MkDocs, http://localhost:8000)
 	mkdocs serve

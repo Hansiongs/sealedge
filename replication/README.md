@@ -8,23 +8,22 @@ by running **one command**.
 
 | File | Purpose |
 |------|---------|
-| `scripts/reproduce.py` | Full reproduction (~1 h target). Runs all 3 strategies with paper-grade `n_spa_iters=2000`. |
-| `scripts/reproduce_fast.py` | Fast reproduction (sub-1-hour target). Same code, reduced `n_spa_iters=500`. |
+| `scripts/reproduce.py` | Single canonical reproduction script. Runs all 3 strategies with paper-grade `n_spa_iters=2000`. |
 | `output/` | Default output directory. Per-run subdirs hold `results.json` (machine-readable) + `results.md` (human-readable). |
 | `README.md` | This file. |
 
 ## Quick start
 
 ```bash
-# Full reproduction (~1 hour target)
+# Full paper-grade reproduction (~2.5 h total on a single machine)
 python scripts/reproduce.py
 
-# Fast reproduction (~10-20 minutes target)
-python scripts/reproduce_fast.py
+# Smoke-test single strategy first (~50 min) before running full pipeline
+python scripts/reproduce.py --strategies vol_compression_v1
 
 # Or via Makefile
-make reproduce
-make reproduce-fast
+make reproduce          # all 3 strategies, n_spa_iters=2000
+make reproduce-one EXP=vol_compression_v1   # single strategy smoke test
 ```
 
 Each run writes:
@@ -34,15 +33,17 @@ Each run writes:
 * `output/results.md` -- human-readable summary table for reviewer
   cross-check
 
-## Reproducibility contract
+## Runtime expectations
 
-| Property | Value |
-|----------|-------|
-| RNG seed | `42` (from `quant_lib.core._config.GLOBAL_SEED`) |
-| Python | 3.10+ (developed on 3.11.15) |
-| Platform | OS-agnostic (Linux/macOS/Windows) |
-| `quant_lib` version | 0.5.1 |
-| SPA iterations | 2000 (full), 500 (fast) |
+| Run | Strategy | Time |
+|-----|----------|------|
+| Single strategy | any of the 3 | ~50 min on a single machine |
+| Full pipeline | all 3 | ~2.5 h on a single machine |
+
+These are paper-grade runtimes (Monte Carlo SPA at `n_spa_iters=2000`).
+Reviewer time investment is documented honestly in JSS submission.
+The single-strategy smoke test is the recommended first check before
+committing to the full pipeline.
 
 All results in `output/results.json` are deterministic given the seed
 and dependency versions. Run the script on a different machine with the
