@@ -1,5 +1,5 @@
 """
-Statistical testing tools -- SPA, PSR, FDR correction.
+Public stats helpers: SPA (legacy 3-tuple), PSR, FDR correction.
 """
 
 from numpy import ndarray
@@ -36,47 +36,37 @@ def spa_test(
     weekend_penalty: float = DEFAULTS["weekend_liquidity_penalty"],
     asset_risk_weights: dict[str, float] | None = None,
 ) -> tuple[float, ndarray, float]:
-    """Run Portfolio SPA (Superior Predictive Ability) test.
+    """Run portfolio SPA under the legacy circular-permutation null.
 
-    Tests whether the observed strategy edge is genuine or random
-    using time-anchored circular permutation across all assets.
+    Time-anchored permutation of observed trades; p-value uses
+    Phipson & Smyth (2010) add-one correction. Default path for this
+    public 3-tuple API.
 
-    The null hypothesis replicates the strategy's trailing stop exit
-    mechanism on randomly-timed entries, isolating entry-timing edge
-    from exit-mechanism edge.
+    The Hansen-literal null (stationary block bootstrap + Hansen
+    recenter/max-stat) is opt-in on ``quant_lib.core._spa.portfolio_spa``
+    with ``recenter_policy="hansen_literal"``, ``trial_r_nets=...``, and
+    ``return_statistics=True``. Paper-grade sample numbers come from the
+    explore pipeline SPA settings, not from inventing a different null
+    in this thin wrapper.
 
     Parameters
     ----------
     observed_trades : list of dict
-        All OOS trade signals from walk_forward. Must include sl_mult
-        and trail_atr fields for trailing stop replication.
+        OOS trades from walk_forward (needs sl_mult / trail_atr when
+        the null re-simulates exits).
     asset_data : dict of str -> pd.DataFrame
-        Per-symbol data slices with columns: time, close, atr, high, low,
-        funding_rate, is_weekend, is_funding_hour, macro_trend.
+        Per-symbol slices used by the portfolio simulator.
     daily_close_matrix : dict
-        {symbol: {date: close}} for portfolio simulation.
+        ``{symbol: {date: close}}``.
     end_date : str
-        End date for simulation (YYYY-MM-DD).
+        Simulation end (YYYY-MM-DD).
 
     Returns
     -------
     observed_equity : float
-        Final equity from baseline simulation.
     null_equities : np.ndarray
-        Equity from each permutation iteration.
     p_value : float
-        SPA p-value (Phipson & Smyth 2010 add-one corrected).
-
-    Notes
-    -----
-    This public alias exposes the LEGACY circular-permutation SPA only
-    (strict 3-tuple, ``return_statistics=False``); the Hansen-literal SPA
-    null (claim #3 Blocker A: stationary block bootstrap + Eq.7 recenter +
-    Eq.8 cross-strategy max-stat) is opt-in via
-    ``quant_lib.core._spa.portfolio_spa(..., trial_r_nets=...,
-    recenter_policy="hansen_literal", return_statistics=True)`` so the
-    public 3-tuple contract -- pinned by ``test_tools_stats.py``'s
-    sentinel identity test -- stays byte-identical.
+        SPA p-value (add-one corrected).
     """
     if asset_risk_weights is None:
         asset_risk_weights = None  # Let portfolio_spa handle None
@@ -109,10 +99,10 @@ def prob_sharpe_ratio(
     benchmark: float = 0.0,
     annualize: bool = True,
 ) -> tuple[float, float]:
-    """Compute Probabilistic Sharpe Ratio.
+    """Probabilistic Sharpe Ratio (Bailey & Lopez de Prado 2014).
 
-    PSR measures the probability that the true Sharpe ratio exceeds
-    the benchmark, accounting for return skewness and kurtosis.
+    Probability that the true Sharpe exceeds ``benchmark``, using
+    skewness and kurtosis of the return series.
 
     Parameters
     ----------

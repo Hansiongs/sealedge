@@ -1,8 +1,5 @@
 """
-Portfolio SPA -- Superior Predictive Ability test with circular permutation.
-
-Extracted from Hans_Quant_Systems.py:
-  - portfolio_spa (lines 1489-1844)
+Portfolio SPA: legacy circular permutation + optional Hansen-literal null.
 """
 
 import numpy as np
@@ -199,7 +196,7 @@ def _spa_finalize_return(
     ``stats or {}`` (Hansen statistics; populated in Phase 5).
 
     Routing every return path (the 6 early-return guards + the final p-value
-    return) through this helper guarantees ``return_statistics`` is honored
+    return) through this helper keeps ``return_statistics`` honored
     uniformly with no copy-paste drift.
 
     Parameters
@@ -258,7 +255,7 @@ def portfolio_spa(
     stress_mult: float = DEFAULTS["stress_test_multiplier"],
     weekend_penalty: float = DEFAULTS["weekend_liquidity_penalty"],
     asset_risk_weights: dict[str, float] | None = None,
-    # Hansen-literal SPA (claim #3 Blocker A) — opt-in additions. All
+    # Hansen-literal SPA: opt-in additions. All
     # three default to legacy behavior so every existing 3-tuple caller
     # (test_reproducibility.py, tools/stats.spa_test, the spy test) stays
     # byte-identical. Phase 5 fills the ``recenter_policy="hansen_literal"``
@@ -370,7 +367,7 @@ def portfolio_spa(
 
     - DO share within a single ``portfolio_spa`` call (the cache lives
       in the local scope; SPA iterations reuse correlation matrices).
-    - DO NOT share across independent backtests — the cache is keyed by
+    - DO NOT share across independent backtests, the cache is keyed by
       date and will leak stale entries across backtest ranges, producing
       wrong correlations. Each top-level backtest run gets a fresh cache.
     - DO NOT mutate the cache externally during a single backtest run.
@@ -678,7 +675,7 @@ def portfolio_spa(
     n_exceed = int(np.sum(random_equities >= observed_final_equity))
     p_value = (n_exceed + 1) / (n_iters + 1)
 
-    # Hansen-literal SPA null (claim #3 Blocker A). Active only when the
+    # Hansen-literal SPA null. Active only when the
     # caller opts in via ``recenter_policy="hansen_literal"`` AND supplies
     # ``trial_r_nets`` (the K IS PnL arrays) AND ``return_statistics=True``.
     # The actual ``_hansen_spa_p_value`` call happens EARLIER in this

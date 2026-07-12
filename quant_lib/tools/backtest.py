@@ -1,5 +1,5 @@
 """
-Backtesting tools -- walk-forward analysis and trade loop.
+Walk-forward analysis and trade-loop helpers (public tools API).
 """
 
 import numpy as np

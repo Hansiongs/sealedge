@@ -1,8 +1,9 @@
 """
-Phase 0: Formal Hypothesis Definition.
+Formal hypothesis definition (before data peeking).
 
-Framework principle: the hypothesis must be written BEFORE seeing any data,
-and must contain mechanism, boundary conditions, and success criteria.
+Requires mechanism, boundary conditions, and success criteria text.
+Factories: ``for_vol_compression``, ``for_pullback_sniper``,
+``for_funding_rate_carry``.
 """
 
 from dataclasses import dataclass, field
@@ -164,7 +165,7 @@ class Hypothesis:
     ...         "Trailing stop at ATR × 4.0, bailout at 48 bars, no TP "
     ...         "bracket (vol compression rides the full move)"
     ...     ),
-    ...     universe_rules="BTC, ETH, SOL, AVAX, MATIC — age ≥ 365d, "
+    ...     universe_rules="BTC, ETH, SOL, AVAX, MATIC, age ≥ 365d, "
     ...                    "30d volume ≥ 100M USD",
     ...     search_space={
     ...         "vol_pct_thresh": (0.10, 0.25),  # tighter than default
@@ -203,7 +204,7 @@ class Hypothesis:
     ...         "TP bracket at HH_20/LL_20 (mean-reversion target) OR "
     ...         "trailing stop at ATR × 3.0 OR bailout at 36 bars"
     ...     ),
-    ...     universe_rules="BTC, ETH, SOL — age ≥ 365d",
+    ...     universe_rules="BTC, ETH, SOL, age ≥ 365d",
     ...     search_space={
     ...         "rsi_oversold": (20, 30),
     ...         "rsi_overbought": (70, 80),
@@ -213,7 +214,7 @@ class Hypothesis:
     ...     strategy_params={"rsi_period": 14, "allow_short": True},
     ... )
 
-    **Custom hypothesis** (advanced — direct Hypothesis constructor):
+    **Custom hypothesis** (advanced, direct Hypothesis constructor):
 
     >>> from quant_lib.audit import Hypothesis, StrategyType
     >>> hyp = Hypothesis(
@@ -507,7 +508,7 @@ def for_vol_compression(
     ...         "blowouts distort price action."
     ...     ),
     ...     success_criteria="SPA p < 0.10, PF > 1.4, ≥ 40 OOS trades",
-    ...     universe_rules="BTC, ETH, SOL — age ≥ 365d, 30d vol ≥ 100M USD",
+    ...     universe_rules="BTC, ETH, SOL, age ≥ 365d, 30d vol ≥ 100M USD",
     ...     search_space={
     ...         "vol_pct_thresh": (0.10, 0.25),  # tighter than default
     ...         "trail_atr": (2.0, 5.0),
@@ -647,7 +648,7 @@ def for_pullback_sniper(
         Strategy-specific params. Recognized keys:
         - ``allow_long`` (bool, default True)
         - ``allow_short`` (bool, default True)
-        - ``rsi_period`` (int, default 14) — Wilder smoothing period
+        - ``rsi_period`` (int, default 14), Wilder smoothing period
           for the RSI calculation. Most users should keep the default.
     min_train_months : int, default 12
 
@@ -684,7 +685,7 @@ def for_pullback_sniper(
     ...         "pairs where reversal candles are unreliable."
     ...     ),
     ...     success_criteria="SPA p < 0.10, PF > 1.4, ≥ 50 OOS trades",
-    ...     universe_rules="BTC, ETH, SOL — age ≥ 365d",
+    ...     universe_rules="BTC, ETH, SOL, age ≥ 365d",
     ...     search_space={
     ...         "rsi_oversold": (20, 30),     # stricter than default
     ...         "rsi_overbought": (70, 80),  # stricter than default

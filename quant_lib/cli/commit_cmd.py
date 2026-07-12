@@ -1,4 +1,4 @@
-"""quant_exp commit -- Commit to holdout (Phase 4, irreversible).
+"""quant_exp commit -- break seal, run holdout once (irreversible).
 
 Runs the full pipeline on the holdout. Breaks the seal.
 """

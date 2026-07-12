@@ -1,21 +1,8 @@
-"""Auto-discover experiments from the `quant_lib/experiments/` package.
+"""Auto-discover experiment modules under ``quant_lib/experiments/``.
 
-Each Python file in this package (except framework modules) is imported,
-and is expected to register an ``ExperimentConfig`` via the ``@register``
-decorator or by calling ``register(config)`` at module level.
-
-User-facing experiment files live alongside the framework code in this
-package, so a fresh ``pip install -e .`` makes them available immediately
-without any sys.modules injection.
-
-Failures are logged but don't abort (one bad experiment shouldn't
-break the others).
-
-Note
-----
-``discover_experiments()`` is idempotent. It runs once per process
-by default (tracked by ``_DISCOVERED``). Tests can call ``reset()``
-to force re-discovery.
+Imports non-framework modules so they can ``register(...)``. Idempotent
+per process; ``reset()`` forces re-discovery in tests. One bad module
+is logged and skipped.
 """
 from __future__ import annotations
 

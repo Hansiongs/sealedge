@@ -1,4 +1,4 @@
-"""quant_exp show -- Show details of an experiment."""
+"""quant_exp show -- print one experiment config."""
 from __future__ import annotations
 
 import typer

@@ -57,11 +57,21 @@ CLAUDE.md
 # Built documentation site (mkdocs output)
 site/
 
-# Local JSS LaTeX template downloads (scaffold under paper/ when drafting)
+# JSS manuscript: keep source; ignore build products + upstream bulk
+paper/*.aux
+paper/*.bbl
+paper/*.blg
+paper/*.out
+paper/*.toc
+paper/*.lof
+paper/*.lot
+paper/*.synctex.gz
+paper/*.fdb_latexmk
+paper/*.fls
 paper/*.zip
 paper/jss.pdf
-paper/template/jss.pdf
-paper/template/article-visualization.pdf
+paper/template/
+paper/README.txt
 
 # Default reproduce.py output dir (keep explicit sample under output_paper_grade/)
 replication/output/

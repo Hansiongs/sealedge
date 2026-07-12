@@ -1,0 +1,30 @@
+Sample JSON: `hansen_fallback` diagnostic
+=========================================
+
+Paper-grade explore sample under this directory does not include a
+top-level `hansen_fallback` key in `results.json`. The framework's
+diagnostic is handled inside `quant_lib.research.candidate.run_edge_testing`
+(see `quant_lib/research/candidate.py`) and stored on the candidate's
+`edge_metrics` dict under the same key.
+
+Reviewer cross-check path:
+
+1. Load `results.json` and read each strategy's `spa_p_value` and
+   `spa_naive_p_value` fields directly (already top-level).
+2. The Hansen-literal path is the registered explore default
+   (`recenter_policy="hansen_literal"`).
+3. None of the three registered experiments (`vol_compression_v1`,
+   `pullback_sniper_rsi`, `funding_rate_carry`) tripped a
+   Hansen fallback at `n_spa_iters = 2000` -- each row carries a
+   finite `spa_p_value` (1.0 / 0.93 / 0.0005).
+4. The legacy `spa_naive_p_value` is `NaN` for all three strategies
+   under the legacy anchor-span guard (volatility-compression case
+   public disclosure).
+
+Reasoning for the absence of a top-level JSON key: the ExploreResult
+dataclass in `quant_lib/research/results.py` does not expose
+`edge_metrics`. Restructuring the explore return contract to add
+`hansen_fallback` here is out of scope for paper-grade sample
+verification. Reviewers reproducing the run interactively with
+`python -c "from quant_lib import run_explore;..."` can inspect
+`cand.edge_metrics.get('hansen_fallback')` directly on the candidate.

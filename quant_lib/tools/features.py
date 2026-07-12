@@ -1,5 +1,5 @@
 """
-Feature engineering tools -- compute strategy features from raw data.
+Feature helpers: build strategy features from raw OHLCV (leakage-aware).
 """
 
 import pandas as pd

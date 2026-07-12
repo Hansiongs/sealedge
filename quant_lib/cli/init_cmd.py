@@ -1,8 +1,7 @@
-"""quant_exp init -- Scaffold a new experiment.
+"""quant_exp init -- scaffold a new experiment file.
 
-Creates a new experiment file in ``quant_lib/experiments/`` from a
-template, and optionally writes a ``.env`` file with the required
-``QUANT_LIB_HMAC_SECRET`` so the user can start iterating immediately.
+Writes a template under ``quant_lib/experiments/`` and can create a
+``.env`` with ``QUANT_LIB_HMAC_SECRET`` for local use.
 """
 from __future__ import annotations
 
@@ -15,10 +14,7 @@ import typer
 
 from quant_lib.core._logging import console
 
-# ── Atomic file write helper ──────────────────────────────────────────
-# Phase 3.5: crash-safe file writes for scaffold files. A crash
-# mid-write should not leave a half-written experiment file or .env
-# that is indistinguishable from a complete one.
+# Atomic write: avoid half-written experiment / .env on crash.
 
 
 def _atomic_file_write(path: Path, content: str, encoding: str = "utf-8") -> None:

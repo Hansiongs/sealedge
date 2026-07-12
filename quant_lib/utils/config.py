@@ -1,25 +1,8 @@
 """
-Environment-based configuration helpers (Phase 4 — v0.5.0).
+Optional env helpers: repo root, ``.env`` load, HMAC secret fallback.
 
-Provides file-based and environment-based helpers for runtime
-configuration. The primary HMAC-secret accessor is in
-``quant_lib.audit.holdout.get_hmac_secret``; this module adds:
-
-- ``find_repo_root``: locate the project root (where ``pyproject.toml`` lives).
-- ``load_env_file``: parse a ``.env`` file into a ``dict``.
-- ``get_hmac_secret_with_fallback``: thin wrapper that tries the env
-  var first, then ``.env`` file at the repo root.
-
-These helpers are optional: most users won't need them. They are
-provided for tooling (e.g., CI scripts, custom CLI wrappers) that
-needs to load ``.env`` files outside the standard CLI flow.
-
-Migration
----------
-v0.5.0 (Phase 4): this file was previously a stub that contained only a
-one-line docstring. Now it exports the helpers listed above.
-``utils/__init__.py`` re-exports them for convenience:
-``from quant_lib.utils import find_repo_root, load_env_file``.
+Primary seal secret path is ``quant_lib.audit.holdout.get_hmac_secret``.
+These wrappers are for tooling/CI outside the standard CLI flow.
 """
 from __future__ import annotations
 
@@ -60,7 +43,7 @@ def load_env_file(env_path: Optional[Path] = None) -> dict[str, str]:
 
     Handles ``KEY=VALUE`` lines; ignores blanks and lines starting
     with ``#``. Values are stripped of surrounding quotes
-    (single or double). Does NOT modify ``os.environ`` — return
+    (single or double). Does NOT modify ``os.environ``, return
     the dict and let the caller decide.
 
     Parameters

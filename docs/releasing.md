@@ -2,9 +2,8 @@
 
 ## Publishing to PyPI
 
-The repository has a `publish.yml` workflow that uses **trusted publishing**
-(OIDC) — no API tokens required. You only need to configure the trust
-once in the PyPI dashboard.
+The repo has a `publish.yml` workflow with **trusted publishing** (OIDC).
+No API token in CI. Configure the trust once in the PyPI dashboard.
 
 ### One-time PyPI Setup
 
@@ -17,9 +16,9 @@ once in the PyPI dashboard.
 
    | Field | Value |
    |---|---|
-   | PyPI Project Name | `quant_lib` |
+   | PyPI Project Name | `sealedge` |
    | Owner | `Hansiongs` |
-   | Repository name | `hans-backtest` |
+   | Repository name | `sealedge` |
    | Workflow name | `publish.yml` |
    | Environment name | `pypi` |
 
@@ -29,9 +28,9 @@ once in the PyPI dashboard.
 
    | Field | Value |
    |---|---|
-   | PyPI Project Name | `quant_lib` |
+   | PyPI Project Name | `sealedge` |
    | Owner | `Hansiongs` |
-   | Repository name | `hans-backtest` |
+   | Repository name | `sealedge` |
    | Workflow name | `publish.yml` |
    | Environment name | `testpypi` |
 
@@ -44,7 +43,7 @@ once in the PyPI dashboard.
    ```
 
 2. On GitHub, create a **Release** from that tag:
-   - Go to https://github.com/Hansiongs/hans-backtest/releases
+   - Go to https://github.com/Hansiongs/sealedge/releases
    - Click "Draft a new release"
    - Choose the tag you just pushed
    - Write release notes
@@ -52,7 +51,7 @@ once in the PyPI dashboard.
 
 3. The `publish.yml` workflow triggers automatically and:
    - Builds sdist + wheel
-   - Uploads to `pypi.org/p/quant_lib`
+   - Uploads to `pypi.org/p/sealedge`
    - No manual steps required
 
 ### Testing a Pre-Release (TestPyPI)
@@ -62,11 +61,11 @@ once in the PyPI dashboard.
 3. Set environment to `testpypi`
 4. Run
 
-This uploads to `test.pypi.org/project/quant_lib` for validation.
+This uploads to `test.pypi.org/project/sealedge` for validation.
 Install from TestPyPI with:
 
 ```bash
-pip install --index-url https://test.pypi.org/simple/ quant_lib
+pip install --index-url https://test.pypi.org/simple/ sealedge
 ```
 
 ## Local Build Verification
@@ -77,7 +76,7 @@ Before creating a release, verify the build:
 pip install build wheel
 python -m build --sdist --wheel --outdir dist/
 # Check the package installs
-pip install dist/quant_lib-*.tar.gz
+pip install dist/sealedge-*.tar.gz
 python -c "from quant_lib import run_explore; print('OK')"
 ```
 

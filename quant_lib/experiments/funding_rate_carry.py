@@ -49,7 +49,7 @@ register(from_hypothesis(
         train_start="2021-07-01",
         train_end="2025-12-31",
         # holdout auto-resolves POST-training to [2026-01-01, 2026-07-01]
-        # (6-month default; uses train_end + 1d convention for no-peek guarantee)
+        # (6-month default; uses train_end + 1d convention for no-peek holdout placement)
         holdout_months=6,
     ),
     universe=UniverseConfig(

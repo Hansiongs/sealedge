@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Self-contained reproduction script for the sealedge JSS submission.
 
-This script reproduces the **explore-phase** results (WFA + SPA + PSR) for
+This script reproduces the **explore-phase** results (WFA + SPA) for
 all three strategies registered in the sealedge framework:
 
 1. ``vol_compression_v1``  (volatility-compression momentum breakout)
@@ -22,7 +22,7 @@ script is designed to be:
   pipeline). Holdout seal is NOT broken. Reviewer can re-run on their
   own machine and confirm identical numbers.
 
-Paper-grade default is ``n_spa_iters=2000`` (no reduced-iter fast variant).
+Paper-grade default is ``n_spa_iters=2000`` (no reduced-iter path).
 For a shorter smoke test, run a single strategy first; SPA precision is
 unchanged.
 
@@ -30,7 +30,7 @@ Usage
 -----
 ::
 
-    python scripts/reproduce.py                 # full pipeline (~50 min–2.5 h)
+    python scripts/reproduce.py                 # full pipeline (~53 min measured; 1-2 h cold)
     python scripts/reproduce.py --output-dir /tmp/jss-rep
     python scripts/reproduce.py --strategies vol_compression_v1  # single-strategy smoke
 
@@ -84,7 +84,7 @@ DEFAULT_STRATEGIES: list[str] = [
 ]
 
 DEFAULT_OUTPUT_DIR = _REPO_ROOT / "replication" / "output"
-DEFAULT_N_SPA_ITERS = 2000  # paper-grade. Fast script uses 500.
+DEFAULT_N_SPA_ITERS = 2000  # paper-grade only; no reduced-iter script
 
 
 def _check_data_coverage(
@@ -216,7 +216,11 @@ def _explore_result_to_dict(result: Any) -> dict[str, Any]:
 
     ExploreResult is a dataclass with both attribute and dict-style access
     (backward-compat). We normalise to plain dict via ``dataclasses.asdict``
-    where possible to keep all fields.
+    where possible to keep all fields. ``edge_metrics`` sub-dict carries
+    ``spa_p_value``, ``spa_naive_p_value``, ``hansen_fallback``, etc.; we
+    promote ``hansen_fallback`` and the two SPA fields to the top level so
+    reviewers can grep ``results.json`` for ``"hansen_fallback"`` and see
+    the path taken by each strategy without walking nested structures.
     """
     import dataclasses
     if dataclasses.is_dataclass(result):
@@ -237,6 +241,12 @@ def _explore_result_to_dict(result: Any) -> dict[str, Any]:
             out[k] = v
         except (TypeError, ValueError):
             out[k] = repr(v)
+    # Promote Hansen diagnostics from edge_metrics to top level.
+    em = out.get("edge_metrics")
+    if isinstance(em, dict):
+        for key in ("spa_p_value", "spa_naive_p_value", "hansen_fallback"):
+            if key in em and key not in out:
+                out[key] = em[key]
     return out
 
 
@@ -282,8 +292,8 @@ def _write_markdown(
 
     The Markdown shows the same numbers as ``results.json`` but in a
     table format that lets a reviewer skim the headline metrics
-    (PSR, SPA p-value, n OOS trades, final equity) without opening
-    the JSON.
+    (SPA p-value, n OOS trades, final equity) without opening the JSON.
+    Explore does not emit holdout PSR; that metric is on the commit path.
     """
     meta = output["metadata"]
     strategies = output["strategies"]
@@ -300,26 +310,25 @@ def _write_markdown(
     )
     lines.append("## Strategy results\n")
     lines.append(
-        "| Strategy | Status | PSR | SPA p-value | "
+        "| Strategy | Status | SPA p-value | "
         "n OOS trades | Final equity | Elapsed (s) |"
     )
     lines.append(
-        "|----------|--------|-----|-------------|"
+        "|----------|--------|-------------|"
         "-------------|--------------|-------------|"
     )
     for name, result in strategies.items():
         if result["status"] != "success":
             lines.append(
-                f"| `{name}` | ❌ {result['status']} | — | — | — | — "
+                f"| `{name}` | ❌ {result['status']} |, |, |, "
                 f"| {result.get('elapsed_seconds', '?')} |"
             )
             continue
         m = result["metrics"]
-        psr = m.get("psr", "—")
-        spa = m.get("spa_p_value", m.get("spa_naive_p_value", "—"))
-        n_oos = m.get("n_oos_trades", m.get("n_trades", "—"))
-        equity = m.get("final_equity", "—")
-        elapsed = result.get("elapsed_seconds", "—")
+        spa = m.get("spa_p_value", m.get("spa_naive_p_value", ", "))
+        n_oos = m.get("n_oos_trades", m.get("n_trades", ", "))
+        equity = m.get("final_equity", ", ")
+        elapsed = result.get("elapsed_seconds", ", ")
         # Format numerics (3 d.p. floats) for readability.
         def fmt(v: Any) -> str:
             if isinstance(v, float):
@@ -328,7 +337,7 @@ def _write_markdown(
                 return f"{v:.4f}"
             return str(v)
         lines.append(
-            f"| `{name}` | ✅ success | {fmt(psr)} | {fmt(spa)} | "
+            f"| `{name}` | ✅ success | {fmt(spa)} | "
             f"{n_oos} | {fmt(equity)} | {elapsed} |"
         )
     lines.append("")

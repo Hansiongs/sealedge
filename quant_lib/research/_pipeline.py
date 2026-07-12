@@ -1,17 +1,9 @@
-"""Shared pipeline helpers used by both the Python API and CLI.
+"""Shared explore-pipeline helpers for the Python API and CLI.
 
-Sprint 3 fix 3.4: before Sprint 3, ``run_explore`` (in
-``quant_lib/__init__.py``) and ``quant_exp explore`` (in
-``quant_lib/cli/explore.py``) had near-identical session/candidate
-construction logic. Drift between the two entry points was a real
-risk (e.g., one of them could forget the
-``strategy=exp.strategy`` argument, silently losing per-experiment
-overrides).
-
-This module defines ``build_explore_candidate`` -- a single source
-of truth for the explore-pipeline boilerplate (resolve period,
-build session, create candidate). Both ``run_explore`` and the CLI
-``explore`` command call it.
+``build_explore_candidate`` is the single path that resolves an
+experiment, builds a ``ResearchSession``, and creates a ``Candidate``.
+Both ``run_explore`` and ``quant_exp explore`` call it so they cannot
+drift (e.g. dropping ``strategy=exp.strategy``).
 """
 from __future__ import annotations
 

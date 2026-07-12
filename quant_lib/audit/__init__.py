@@ -1,12 +1,12 @@
 """
-quant_lib.audit -- Integrity layer for honest backtesting.
+quant_lib.audit -- integrity primitives for the research path.
 
-Provides tools for:
-- Phase 0: Formal hypothesis definition with timestamp
-- Principle 2: Experiment counter with Bonferroni tracking
-- Phase 4: Sealed holdout set management
+- Hypothesis definition (timestamped)
+- Experiment counter (Bonferroni / FDR bookkeeping)
+- Sealed holdout set
 
-Usage:
+Usage::
+
     from quant_lib.audit import Hypothesis, ExperimentLog, HoldoutSet
 """
 

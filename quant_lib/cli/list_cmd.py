@@ -1,4 +1,4 @@
-"""quant_exp list -- List all registered experiments."""
+"""quant_exp list -- list registered experiments."""
 from __future__ import annotations
 
 from rich.table import Table

@@ -54,9 +54,8 @@ class PeriodConfig:
     POST-training period of length ``holdout_months`` (default 6):
     ``[train_end + 1 day, train_end + 1 day + holdout_months]``.
 
-    The post-training convention enforces the no-peek guarantee: the
-    holdout must be data that the WFA never saw, not an embargo slice
-    of training data. WFA purging handles IS<->OOS contamination via
+    Post-training holdout is data WFA never saw (not an in-train embargo
+    slice). WFA purging handles IS/OOS boundary contamination via
     ``_get_purge_days`` separately.
 
     Parameters

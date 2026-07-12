@@ -1,11 +1,4 @@
-"""
-Helper utilities -- matrices, bootstrap, regime stats, param diagnostics.
-
-Extracted from Hans_Quant_Systems.py:
-  - build_daily_matrices (lines 2057-2088)
-  - _run_bootstrap (lines 2523-2565)
-  - _compute_regime_stats (lines 2568-2590)
-  - _print_param_stability (lines 2593-2795)
+"""Metrics helpers: equity stats, bootstrap utilities.
 """
 
 import pandas as pd

@@ -1,32 +1,17 @@
 """
-Phase 4: Sealed Holdout Set Manager.
+Sealed holdout set (HMAC-signed metadata + data hash).
 
-Framework principles:
-  - The holdout is separated BEFORE Phase 1 starts, never touched until Phase 4.
-  - Only one test -- once the holdout is used, it dies as a holdout.
-  - Violation = invalidates all results.
+Rules of the research path:
+  - Holdout is sealed before explore phases; commit opens it once.
+  - After break, it is no longer a reserved holdout.
+  - Hash/HMAC failure means the audit trail is invalid for that seal.
 
-C-2 fix: ``seal()`` now REQUIRES a real ``data_hash`` (SHA256 hex
-digest) so the no-peek guarantee is enforced. The framework's
-ResearchSession computes this hash from the actual holdout data
-at session creation; tests can use a deterministic fake.
+``seal()`` requires a real SHA256 ``data_hash`` of holdout inputs.
+``ResearchSession`` computes it at creation; tests may pass a fake.
 
-B0.1 fix: the seal is now signed with **HMAC-SHA256** over the
-canonical seal state using a secret loaded from the
-``QUANT_LIB_HMAC_SECRET`` environment variable. Without the
-secret, the seal cannot be forged (an attacker cannot construct
-a valid ``signature`` for a tampered state) and cannot have its
-``broken_at`` field silently reset. The secret is **required**:
-if the environment variable is not set, all seal operations
-raise ``RuntimeError``. There is no insecure fallback.
-
-The ``data_hash`` is a SHA256 fingerprint of the holdout data
-alone (for the no-peek guarantee); the ``signature`` is an
-HMAC of the seal's metadata (``start``, ``end``, ``sealed_at``,
-``broken_at``, ``data_hash``) using the secret. Together they
-provide two independent integrity guarantees: data integrity
-(no-peek) and state integrity (no tampering with broken/sealed
-status).
+``QUANT_LIB_HMAC_SECRET`` (min 32 chars) is required for seal ops; there
+is no insecure default. ``data_hash`` covers payload integrity; HMAC
+``signature`` covers seal metadata (dates, broken_at, data_hash).
 
 Usage:
     >>> import os
@@ -223,7 +208,7 @@ class HoldoutSeal:
         ISO 8601 timestamp when the seal was broken; ``None`` while
         still sealed.
     data_hash : str or None
-        SHA256 hex digest of the holdout raw data (no-peek guarantee).
+        SHA256 hex digest of the holdout raw data (no-peek check).
     signature : str or None
         HMAC-SHA256 signature of the seal state (excludes ``seal_file``).
     seal_file : str or None
@@ -369,7 +354,7 @@ class HoldoutSet:
         ----------
         data_hash : str
             SHA256 hash of the holdout data at sealing time. REQUIRED.
-            Passing a placeholder defeats the no-peek guarantee enforced
+            Passing a placeholder defeats the no-peek check enforced
             by ResearchSession. Tests that don't care about the hash can
             pass a deterministic fake (e.g. "0" * 64).
 
@@ -507,7 +492,7 @@ class HoldoutSet:
         stale if disk tampering occurred between the last ``verify()``
         call and this ``commit_break()`` (e.g., another process
         modified the seal file after session creation). The re-verify
-        guarantees the integrity contract is enforced at the moment
+        enforces the integrity contract is enforced at the moment
         the seal is irreversibly broken.
         """
         if self._tampered:

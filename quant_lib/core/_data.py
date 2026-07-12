@@ -1,12 +1,5 @@
 """
-Data fetching -- Binance Vision klines & funding rate.
-
-Extracted from Hans_Quant_Systems.py:
-  - fetch_with_retry (lines 53-77)
-  - ensure_data_exists (lines 80-208)
-  - ensure_funding_exists (lines 211-321)
-
-CSV files are stored in DATA_DIR subdirectory.
+Data fetch: Binance Vision klines and funding rates into DATA_DIR.
 """
 
 import os
@@ -58,7 +51,7 @@ _DATA_DIR_INITIALIZED = False
 
 
 def _ensure_data_dir() -> None:
-    """Lazy-init the data cache directory — called only when needed."""
+    """Lazy-init the data cache directory, called only when needed."""
     global _DATA_DIR_INITIALIZED
     if not _DATA_DIR_INITIALIZED:
         os.makedirs(DATA_DIR, exist_ok=True)

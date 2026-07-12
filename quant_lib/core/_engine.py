@@ -1,15 +1,8 @@
 """
-Numba trade engine -- fast_trade_loop.
+Numba trade engine: ``fast_trade_loop``.
 
-Extracted from Hans_Quant_Systems.py lines 656-967.
-
-This module contains the JIT-compiled trade loop. No dependencies on
-other core modules -- all parameters are passed explicitly as arrays/floats.
-
-Supports three strategies via strategy_type:
-  - 0 = vol_compression_breakout (original)
-  - 1 = pullback_sniper (RSI + reversal)
-  - 2 = funding_rate_carry (perp funding carry, mean-reversion)
+JIT path takes arrays/floats only. ``strategy_type``:
+  0 vol_compression, 1 pullback_sniper, 2 funding_rate_carry.
 """
 
 import numpy as np

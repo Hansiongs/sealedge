@@ -1,17 +1,10 @@
-"""Candidate: per-hypothesis state in a ResearchSession.
+"""Candidate: one hypothesis inside a ResearchSession.
 
-Each candidate represents one hypothesis attempt. It tracks the
-state machine: hypothesis -> universe -> edge -> narrowed -> ready.
+State machine: hypothesis -> universe -> edge -> narrowed -> ready.
+Carries search_space / static_overrides / strategy_params into WFA.
 
-Per-hypothesis config (search_space, static_overrides, strategy_params)
-is propagated through the candidate and used by the WFA engine.
-
-Notes
------
-This module contains the :class:`Candidate` class plus its narrowing
-helpers and stage-transition guards. The orchestration that drives
-a candidate through the workflow lives in
-:mod:`quant_lib.research.session`.
+Stage transitions and narrowing helpers live here; session-level
+orchestration is in ``quant_lib.research.session``.
 """
 
 from dataclasses import dataclass, field
@@ -131,7 +124,7 @@ class Candidate:
     # reporting, cli/_report, cli/explore, __init__.run_explore).
     spa_naive_p_value: float = 1.0
     # K Optuna IS PnL arrays (collected from fold_params[*]["trial_r_nets"])
-    # fed to the Hansen-literal SPA null (claim #3 Blocker A). None
+    # fed to the Hansen-literal SPA null. None
     # sentinels (trials that short-circuited an early return) are filtered
     # here; arrays are stored as the float lists WFA emitted, re-converted
     # to np.ndarray only at the portfolio_spa call site.
@@ -591,7 +584,7 @@ class Candidate:
                  "funding_rate", "is_weekend", "is_funding_hour", "macro_trend"]
             ]
 
-        # Hansen-literal SPA (claim #3 Blocker A): opt in to the Hansen
+        # Hansen-literal SPA: opt in to the Hansen
         # null (stationary block bootstrap + Eq.7 recenter + Eq.8 cross-
         # strategy max-stat) when WFA collected per-trial IS PnL arrays.
         # trial_r_nets come back from WFA as float lists (to keep fold-
@@ -783,7 +776,7 @@ class Candidate:
         # The hypothesis specifies the minimum training months required.
         # If the actual training period is shorter, refuse to mark ready.
         # This duplicates the check in commit_to_holdout (commit.py:189-203)
-        # as defense-in-depth: callers that go directly to mark_ready()
+        # extra guard: callers that go directly to mark_ready()
         # without going through the full commit path are still protected.
         train_start, train_end = self.session.training_period
         n_train_months = (

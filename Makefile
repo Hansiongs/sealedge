@@ -1,4 +1,4 @@
-.PHONY: help install install-dev test test-fast test-parallel test-cov test-bench test-bench-compare test-bench-save bench-clean lint lint-ruff lint-mypy format clean reproduce reproduce-one docs-serve docs-build mutate mutate-fast mutate-stats mutate-show mutate-clean
+.PHONY: help install install-dev test test-fast test-parallel test-cov test-bench test-bench-compare test-bench-save bench-clean lint lint-ruff lint-mypy format clean reproduce reproduce-one reproduce-seal docs-serve docs-build mutate mutate-fast mutate-stats mutate-show mutate-clean
 
 help:  ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -72,7 +72,7 @@ format:  ## Auto-format code (ruff)
 
 reproduce:  ## Reproduce paper results (all strategies, n_spa_iters=2000, paper-grade)
 	@echo "==> Running scripts/reproduce.py (all 3 strategies, n_spa_iters=2000)..."
-	@echo "    Paper-grade: ~50 min per strategy, ~2.5 h total on a single machine."
+	@echo "    Paper-grade: ~53 min measured for all 3 strategies; 1-2 h cold/slow hosts."
 	@python scripts/reproduce.py
 
 reproduce-one:  ## Reproduce single experiment (smoke test; same n_spa_iters=2000)
@@ -82,6 +82,10 @@ reproduce-one:  ## Reproduce single experiment (smoke test; same n_spa_iters=200
 		exit 1; \
 	fi
 	@python scripts/reproduce.py --strategies $(EXP)
+
+reproduce-seal:  ## Claim 1 seal micro-demo (synthetic HMAC; seconds; no market data)
+	@echo "==> Running scripts/reproduce_seal_demo.py (synthetic seal lifecycle)..."
+	@python scripts/reproduce_seal_demo.py
 
 docs-serve:  ## Serve documentation locally (MkDocs, http://localhost:8000)
 	mkdocs serve

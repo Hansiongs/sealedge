@@ -1,5 +1,5 @@
 """
-Data fetching tools -- download and cache Binance Vision data.
+Data fetch/cache helpers (Binance Vision and local cache).
 """
 
 import pandas as pd

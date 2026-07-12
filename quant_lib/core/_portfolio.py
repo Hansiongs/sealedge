@@ -1,10 +1,4 @@
-"""
-Portfolio simulation -- MTM, margin, liquidation, CB, SPA baseline.
-
-Extracted from Hans_Quant_Systems.py:
-  - _trade_key (lines 973-977)
-  - _mtm_and_margin_check (lines 980-1073)
-  - simulate_full_portfolio (lines 1076-1483)
+"""Portfolio simulation: MTM, margin, rejects, circuit breaker.
 """
 
 import pandas as pd

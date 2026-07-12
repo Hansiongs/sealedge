@@ -1,11 +1,8 @@
 """
-Data cache with 7-day TTL.
+Data cache with configurable TTL (default 7 days).
 
-Wraps the existing `ensure_data_exists` from `core._data` and adds:
-- 7-day TTL (configurable)
-- Metadata file per cache entry (timestamp, hash)
-- Invalidation logic
-- Per-symbol cache stats
+Thin wrapper over ``core._data.ensure_data_exists`` plus metadata,
+invalidation, and per-symbol cache stats.
 """
 
 import os

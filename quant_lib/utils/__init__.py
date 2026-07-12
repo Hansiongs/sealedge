@@ -1,7 +1,6 @@
 """
-quant_lib.utils -- Shared utilities.
+quant_lib.utils -- shared helpers (repo root, env, HMAC secret).
 
-Phase 4 (v0.5.0): re-exports config helpers for convenience.
     >>> from quant_lib.utils import find_repo_root, load_env_file
 """
 from quant_lib.utils.config import (

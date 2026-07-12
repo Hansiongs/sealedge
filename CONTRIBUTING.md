@@ -1,4 +1,4 @@
-# Contributing to quant_lib
+# Contributing to sealedge
 
 ## Table of Contents
 
@@ -24,8 +24,8 @@
 ### Clone & Install
 
 ```bash
-git clone https://github.com/Hansiongs/hans-backtest.git
-cd hans-backtest
+git clone https://github.com/Hansiongs/sealedge.git
+cd sealedge
 
 # Create a virtual environment (recommended)
 python -m venv .venv
@@ -187,10 +187,10 @@ Experiments are user-defined strategy configurations. To add one:
 A new strategy variant (e.g. a third type beyond vol_compression / pullback_sniper)
 requires changes in 4 locations:
 
-1. **`quant_lib/audit/hypothesis.py`** — add a new `StrategyType` enum member
-2. **`quant_lib/core/_engine.py`** — add a `STRATEGY_*` int constant (for Numba comparability)
-3. **`quant_lib/experiments/base.py`** — add the name-to-int mapping in `STRATEGY_NAME_TO_INT`
-4. **`quant_lib/audit/hypothesis.py`** — add a factory function (like `for_pullback_sniper`)
+1. **`quant_lib/audit/hypothesis.py`**, add a new `StrategyType` enum member
+2. **`quant_lib/core/_engine.py`**, add a `STRATEGY_*` int constant (for Numba comparability)
+3. **`quant_lib/experiments/base.py`**, add the name-to-int mapping in `STRATEGY_NAME_TO_INT`
+4. **`quant_lib/audit/hypothesis.py`**, add a factory function (like `for_pullback_sniper`)
 
 The int values are part of the Numba ABI and **must be stable** (they are used in
 `fast_trade_loop`'s positional parameter list).
@@ -201,9 +201,9 @@ The int values are part of the Numba ABI and **must be stable** (they are used i
 
 ### Pre-release Checklist
 
-- [ ] `make lint` — 0 ruff + 0 mypy errors
-- [ ] `make test-cov` — all tests pass, coverage ≥ 70%
-- [ ] `make mutate` — no regression in mutation score from last release
+- [ ] `make lint`, 0 ruff + 0 mypy errors
+- [ ] `make test-cov`, all tests pass, coverage ≥ 70%
+- [ ] `make mutate`, no regression in mutation score from last release
 - [ ] Version bumped in `pyproject.toml`, `quant_lib/__init__.py`, and `CITATION.cff`
 - [ ] `CHANGELOG.md` updated with all notable changes
 - [ ] `README.md` badges reflect current test count
@@ -240,7 +240,7 @@ Before opening a PR, verify:
 - [ ] `make lint` passes (ruff + mypy)
 - [ ] `make test-fast` passes
 - [ ] `python -m pytest tests/test_<affected_module>.py -x` passes
-- [ ] If engine code changed, `python -m pytest tests/test_engine.py -x` additionally passes
+- [ ] If engine code changed, `python -m pytest tests/test_engine.py -x` also passes
 - [ ] New code has tests (unit test for each new function, integration test for each new feature)
 - [ ] Public API changes are reflected in `__init__.py` `__all__`
 - [ ] `CHANGELOG.md` has an entry under `[Unreleased]`

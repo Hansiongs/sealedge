@@ -1,37 +1,18 @@
-"""Experiment registry and configuration.
+"""Experiment registry and config types.
 
-Public API for defining and managing experiments. Users define
-experiments as Python files in the ``quant_lib/experiments/`` package,
-using the ``@register`` decorator or by calling ``register(config)``
-at module level.
-
-Example (in ``quant_lib/experiments/my_strategy.py``):
+Define experiments as modules under ``quant_lib/experiments/`` and
+``register(...)`` them. Package import auto-discovers non-framework
+modules. Example::
 
     from quant_lib.audit import for_vol_compression
-    from quant_lib.experiments import (
-        PeriodConfig,
-        UniverseConfig,
-        from_hypothesis,
-        register,
-    )
-
-    _HYP = for_vol_compression(
-        name="my_strategy",
-        mechanism="...",
-        boundary_conditions="...",
-        success_criteria="...",
-    )
+    from quant_lib.experiments import PeriodConfig, UniverseConfig, from_hypothesis, register
 
     register(from_hypothesis(
         name="my_strategy",
-        hypothesis=_HYP,
-        period=PeriodConfig(train_start="2020-01-01", train_end="2024-12-31"),
-        universe=UniverseConfig(symbols=["BTCUSDT", "ETHUSDT"]),
+        hypothesis=for_vol_compression(...),
+        period=PeriodConfig(train_start="2021-07-01", train_end="2025-12-31"),
+        universe=UniverseConfig(symbols=["BTCUSDT", "ETHUSDT", "SOLUSDT"]),
     ))
-
-On import of this module, all experiments in this package (excluding
-framework modules ``base``, ``registry``, ``built_in``, ``__init__``)
-are auto-discovered and added to the registry.
 """
 from __future__ import annotations
 

@@ -1,14 +1,9 @@
-"""Visualization suite for quant_lib research output.
+"""Optional charts for research output (matplotlib + seaborn).
 
-Matplotlib + seaborn styled charts. Each plotting function either:
-- Saves a PNG to disk (when ``output_path`` is provided), OR
-- Returns a base64-encoded PNG data URI (for HTML inline embedding).
+Each plot either saves a PNG (``output_path``) or returns a base64 PNG
+data URI for HTML. Uses the Agg backend for headless/CI.
 
-Designed for headless / CI usage: ``matplotlib.use("Agg")`` is set
-at module import time, before pyplot is imported.
-
-This module is OPTIONAL: it requires ``matplotlib>=3.5`` and
-``seaborn>=0.12`` to be installed. Install with::
+Optional deps: ``matplotlib>=3.5``, ``seaborn>=0.12``. Install with::
 
     pip install quant_lib[viz]
 

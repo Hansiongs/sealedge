@@ -1,17 +1,14 @@
 """
-commit_to_holdout: black-box single-shot holdout commit.
+commit_to_holdout: one-shot holdout commit (irreversible).
 
-This is the only irreversible operation in the research module.
-Once called, the holdout seal is broken and the commit is recorded
-in the session's audit trail.
+Breaks the session seal after re-verifying the data hash. Uses frozen
+params from the candidate (stability-gated best fold per symbol; see
+``best_params.pick_best_params_per_symbol``). No re-optimization on
+holdout. Full cost model (slippage, weekend, funding).
 
-Per the framework:
-- Frozen params from candidate (stability-gated best fold per symbol --
-  see quant_lib.research.best_params.pick_best_params_per_symbol)
-- No re-optimization on holdout
-- Full cost model: slippage, weekend, funding
-- Compute SHA256 hash of actual holdout data before breaking seal
-- All metrics computed and reported; user interprets via success_criteria text
+Returns metrics only (including holdout PSR). No auto-verdict; the
+user reads ``success_criteria_text``. Paper-grade replication uses
+explore only and does not call this path by default.
 """
 
 from datetime import datetime, timezone
@@ -483,7 +480,7 @@ def commit_to_holdout(
     # ── Compute SHA256 of actual holdout data BEFORE breaking seal ──
     # C-2 fix: use the cached raw OHLCV (all columns + BTC extended)
     # so the hash matches the one computed at session init. This
-    # ensures that if data was modified between init and commit, the
+    # means that if data was modified between init and commit, the
     # commit_break call below will record the mismatch and the
     # verify() would also catch it (defense in depth).
     from quant_lib.research.session import _compute_holdout_data_hash

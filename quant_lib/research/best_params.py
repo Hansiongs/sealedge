@@ -1,49 +1,9 @@
 """Best-params selection across WFA folds.
 
-Decision (R1, 2026-06-30): stability-gated best fold.
-
-Selection rule:
-  1. Find the fold with the highest ``best_value`` (PSR) -- the "best fold".
-  2. Compute per-param CV (std/mean) across all folds for the param set
-     of the best fold.
-  3. If mean CV > ``cv_threshold`` (default 30%, aligned with
-     ``print_param_stability`` UNSTABLE rating):
-     - Fall back to **median per param** across all folds.
-     - This is the "stability gate": best fold wins when its params
-       are robust across folds; median is the safety net when the
-       best fold is a lucky outlier.
-  4. Otherwise, use the best fold's params (preserves PSR signal).
-
-Rationale
----------
-Pure best-per-fold has N-test selection bias across folds (pick the
-max of N correlated PSR estimates). Pure median ignores the winning
-signal entirely. Stability-gated selection preserves the best signal
-when the best fold's params are *consistent* across folds, and
-defaults to consensus when the best fold is a *lucky* outlier (high
-PSR but param set varies wildly between folds).
-
-Anti-overfit stack (already in place, upstream of selection):
-- PSR (probabilistic Sharpe, not raw SR) in WalkForwardObjective
-- ESS (effective sample size, Kish formula, handles autocorrelation)
-- Time decay 15-month halflife on bar weights in WFA (recent bars
-  dominate; reduces N-fold selection bias by weighting toward recent
-  folds' PSR)
-- Expanding window + warm-start Optuna (4 trials: 1 enqueue + 3 perturbed)
-- L2 reg (param_center + param_scale, pulls params to center)
-- FDR (Benjamini-Hochberg per-symbol correction in reporting)
-
-This module adds the *final* safety net: stability gating at selection
-time. The CV threshold is 30% by default, aligned with the existing
-``print_param_stability`` UNSTABLE rating in
-``quant_lib.core._metrics.print_param_stability`` (line 205-213).
-
-Note
-----
-The previous function ``compute_frozen_params_best_last`` (last fold
-approach) is preserved as a deprecation shim in
-``quant_lib.core._wfa``. New code should use
-:func:`pick_best_params_per_symbol` from this module.
+Stability-gated rule: prefer the fold with highest PSR (best_value);
+if per-param CV across folds exceeds ``cv_threshold`` (default 30%),
+fall back to the median param vector. Aligns with the live-style
+"pick one frozen set per symbol" path used at commit.
 """
 from __future__ import annotations
 

@@ -1,6 +1,6 @@
 site_name: sealedge
-site_description: Honest backtesting for crypto quantitative strategies
-site_url: https://hansiongs.github.io/hans-backtest
+site_description: Sealed-holdout backtesting for crypto quantitative strategies
+site_url: https://hansiongs.github.io/sealedge
 repo_url: https://github.com/Hansiongs/sealedge
 repo_name: Hansiongs/sealedge
 edit_uri: edit/main/docs/

@@ -1,24 +1,26 @@
-# quant_lib
+# sealedge
 
-Honest backtesting toolkit for quantitative trading strategies, with
-sealed holdout discipline, multiple-testing correction, and
-reproducible research guarantees.
+Backtesting toolkit for quant strategies with sealed holdouts,
+multiple-testing correction, and a reproducible research workflow.
 
-## Why quant_lib?
+**Distribution name:** `sealedge` (PyPI / repo). **Importable package:**
+`quant_lib`. **CLI:** `quant_exp`.
+
+## Why sealedge?
 
 - **No look-ahead**: holdout is sealed at session start with HMAC-SHA256.
   You cannot peek at the holdout data without breaking the seal.
 - **Multiple-testing correction**: Bonferroni + Benjamini-Hochberg FDR.
   Every experiment is counted; ablation studies are half-weighted.
-- **Probabilistic Sharpe Ratio** (Bailey & Lopez de Prado 2012): accounts
+- **Probabilistic Sharpe Ratio** (Bailey & Lopez de Prado 2014): accounts
   for skewness and kurtosis, not just mean/variance.
 - **Superior Predictive Ability** (two coexisting nulls):
   - **Legacy** (default, `recenter_policy="legacy"`): uniform
     time-anchored permutation of observed trades + Phipson & Smyth
     2010 add-one correction. Stable regression-tested 3-tuple contract;
-    the framework's defence-in-depth against fabricated edge.
+    the default path that still blocks a made-up edge on trade outcomes.
   - **Hansen-literal** (opt-in, `recenter_policy="hansen_literal"` +
-    `trial_r_nets` + `return_statistics=True`): Politis–Romano
+    `trial_r_nets` + `return_statistics=True`): Politis, Romano
     stationary block bootstrap over per-trial IS loss-differentials
     + Hansen (2005) Eq.7 recenter/discarding + Eq.8 cross-strategy
     max-statistic + Phipson-Smyth add-one. The max is the
@@ -29,7 +31,7 @@ reproducible research guarantees.
     in `spa_naive_p_value` for transparency. See
     [`docs/methodology.md`](methodology.md) §6 for the exact null,
     finite-sample divergences, and the three user-accepted caveats
-    (honest-power may be a negative finding; KS<0.25 finite-sample is
+    (finite-sample power of max-of-K may be low; KS<0.25 finite-sample is
     empirical-only; spy `2*n_iters` invariant is gated to the legacy
     path).
 - **Walk-Forward Analysis**: Optuna-based per-symbol optimisation with
@@ -64,8 +66,8 @@ experiments/  →  cli/  →  research/  →  audit/  →  tools/  →  core/  �
 
 ## Quick Links
 
-- [Methodology](methodology.md) — paper-grade methodology writeup
-- [Testing](testing.md) — how to run and write tests
-- [Contributing](contributing_source.md) — development setup and PR checklist
-- [Changelog](changelog_source.md) — version history
-- [GitHub Repository](https://github.com/Hansiongs/hans-backtest)
+- [Methodology](methodology.md), paper-grade methodology writeup
+- [Testing](testing.md), how to run and write tests
+- [Contributing](contributing_source.md), development setup and PR checklist
+- [Changelog](changelog_source.md), version history
+- [GitHub Repository](https://github.com/Hansiongs/sealedge)

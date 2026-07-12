@@ -1,24 +1,9 @@
 """
-Per-fold PF-weighted risk allocation (X1 scheme).
+Per-fold PF-weighted risk allocation (X1).
 
-This module provides a self-contained, pure-Python implementation of
-the per-fold decay-weighted Profit Factor (PF) risk rebalancing used
-by the framework. It is the canonical risk-allocation path, called
-from both ``Candidate.run_edge_testing`` (multi-fold WFA) and
-``commit_to_holdout`` (no-op for holdout trades with no fold_key).
-
-Design (X1 scheme):
-  - For each fold, look at PAST folds' trades (decay-weighted)
-  - Convert to clamped weight factor per symbol (in [floor, ceiling])
-  - Rescale to preserve target total = baseline * (n_active_in_fold / n_total_symbols)
-  - Apply by mutating ``t["risk_weight"]`` on each trade in current fold
-
-Live-trading mirror: the framework re-allocates risk every 3 months
-(one WFA fold), so the validation set itself validates the combined
-edge of (strategy + meta-allocation).
-
-No Numba, no heavy deps, leaf in the dependency DAG (imports only
-from ``core/_config`` and ``core/_logging``).
+Decay-weighted PF from past folds -> clamped per-symbol weights on the
+current fold. Used by explore edge-testing; holdout commit is a no-op
+when trades lack fold_key. Pure Python leaf (``_config``, ``_logging``).
 """
 from __future__ import annotations
 

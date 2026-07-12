@@ -1,18 +1,13 @@
-"""Migrate holdout seal files to the current HMAC format.
+"""Re-sign holdout seal files with the current HMAC secret.
 
 Background
 ----------
-``quant_lib`` v0.3.0 introduces HMAC-SHA256 signing of holdout seals
-(``B0.1`` fix). Seal files created with older versions lack a
-``signature`` field, or were signed with a different secret. When the
-runtime verifies these files with the current ``QUANT_LIB_HMAC_SECRET``,
-``verify_seal_signature()`` returns False and the session raises
-``SealVerificationFailed`` on the next commit.
+From v0.3.0 seals carry an HMAC-SHA256 signature. Older seals may lack
+``signature`` or were signed with another secret; verification then fails
+and commit raises ``SealVerificationFailed``.
 
-This tool rewrites such seal files in place, computing a fresh HMAC
-signature with the current secret. The on-disk fields (``start``,
-``end``, ``sealed_at``, ``broken_at``, ``data_hash``) are preserved
-verbatim -- only the ``signature`` field is (re)computed.
+This command rewrites seals in place: dates and ``data_hash`` stay the
+same; only ``signature`` is recomputed with ``QUANT_LIB_HMAC_SECRET``.
 
 Usage
 -----

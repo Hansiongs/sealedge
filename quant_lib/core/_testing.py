@@ -1,10 +1,5 @@
 """
-Statistical testing utilities -- PSR, FDR, p-value labeling.
-
-Extracted from Hans_Quant_Systems.py:
-  - prob_sharpe_ratio (lines 1850-1874)
-  - _fdr_correction (lines 2798-2853)
-  - _label_p_value (lines 2856-2894)
+Statistical testing utilities: PSR, FDR, p-value labeling.
 """
 
 import numpy as np
@@ -23,9 +18,8 @@ def prob_sharpe_ratio(
 ) -> tuple[float, float]:
     """Probabilistic Sharpe Ratio with optional effective sample size (ESS).
 
-    The PSR adjusts the Sharpe ratio for skewness and kurtosis, more
-    valid for crypto returns (fat-tailed, asymmetric). Implements the
-    Bailey & Lopez de Prado (2012) formula:
+    PSR adjusts Sharpe for skewness and kurtosis (useful for fat-tailed
+    returns). Implements Bailey & Lopez de Prado (2014):
 
         PSR = Phi((SR - SR*) / sqrt(Var_correction / (n_eff - 1)))
         Var_correction = 1 - gamma_3 * SR + ((gamma_4 - 1) / 4) * SR^2
@@ -112,7 +106,7 @@ def prob_sharpe_ratio(
         # Warn if any weight falls below the configured floor. This
         # indicates near-degenerate concentration (one trade dominates)
         # where the Kish ESS is close to 1 and PSR is unreliable.
-        # The check is non-blocking — the ESS < 2.0 guard downstream
+        # The check is non-blocking, the ESS < 2.0 guard downstream
         # handles the hard rejection. We only flag it here for diagnostics.
         _w_floor = STATIC.get("psr_weight_floor", 0.001)
         n_below = int((w < _w_floor).sum())
@@ -256,7 +250,7 @@ def deflated_sharpe_ratio(
     under the null that all have true Sharpe = ``benchmark_sharpe``.
 
     This is the missing piece between PSR (single-trial, Bailey & López
-    de Prado 2012) and the framework's multi-trial Optuna search. Without
+    de Prado 2014) and the framework's multi-trial Optuna search. Without
     it, the family of tests (n_symbols × n_folds × n_optuna_trials) is
     under-corrected by the existing Bonferroni adjustment on
     ``n_commits`` (which is typically 1-3, not the real family of

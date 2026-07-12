@@ -1,10 +1,9 @@
 """
-Principles 2 & 3: Experiment Counter and Decision Journal.
+Experiment counter and decision journal.
 
-Framework principles:
-  - Each time a hypothesis is tested (in any form), the counter increments.
-  - Confidence from positive results must be reduced according to the number of trials.
-  - Differentiate "fix bug" from "improve results" -- only the former is not snooping.
+Each tested hypothesis increments the counter for multiple-testing
+bookkeeping (Bonferroni / FDR context). Fixing a bug is not the same
+as a new trial that chases better metrics.
 """
 
 import json
@@ -93,13 +92,13 @@ class ExperimentLog:
             except (json.JSONDecodeError, KeyError, FileNotFoundError) as e:
                 # NOTE (0.2.2): Was silent pass. Now log warning so audit-trail
                 # corruption is visible. The framework's value proposition
-                # is "no look-ahead" — silently losing the audit trail
+                # is "no look-ahead", silently losing the audit trail
                 # defeats that purpose. Start fresh after warning.
                 import logging
                 logging.getLogger("rich").warning(
                     f"Journal '{self.hypothesis_name}' file at {journal_path} "
                     f"is corrupt or unreadable ({type(e).__name__}: {e}). "
-                    f"Starting fresh — previous entries lost."
+                    f"Starting fresh, previous entries lost."
                 )
 
     def log_run(
@@ -178,7 +177,7 @@ class ExperimentLog:
         # mypy flags the int+float assignment as incompatible.
         n_tests: float = self.n_experiments
         if discount_ablations:
-            # NOTE (0.2.2): Was subtract (bug — ablations are disjoint from
+            # NOTE (0.2.2): Was subtract (bug, ablations are disjoint from
             # n_experiments, so subtracting undercounted tests and made
             # adjusted_alpha too lenient). Now adds ablations at half weight,
             # which is the documented "discount" intent: ablations are
@@ -230,8 +229,8 @@ class ExperimentLog:
         """Persist journal to file if journal_path is set (P3-C2 fix).
 
         Phase 3.1: Atomic write via tempfile + os.replace. A crash
-        mid-write leaves the original file intact (defense-in-depth
-        for audit trail integrity — the framework's central value
+        mid-write leaves the original file intact (extra safety
+        for audit trail integrity, the framework's central value
         proposition prevents silent loss of decision history).
         Previously used direct ``open()`` which could produce a
         half-written JSON file on crash, losing the audit trail.

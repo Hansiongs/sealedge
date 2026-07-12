@@ -1,5 +1,5 @@
 """
-Portfolio simulation tools -- MTM, margin, circuit breaker.
+Portfolio simulation: MTM, margin, circuit breaker, rejects.
 """
 
 from typing import Any

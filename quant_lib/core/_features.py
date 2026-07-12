@@ -1,8 +1,4 @@
-"""
-Feature engineering -- leakage-aware feature computation.
-
-Extracted from Hans_Quant_Systems.py:
-  - prepare_data_with_max_time (lines 416-650)
+"""Feature construction for the three built-in strategy types.
 """
 
 import pandas as pd

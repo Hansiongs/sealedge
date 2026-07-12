@@ -1,20 +1,11 @@
 """Result dataclasses for the public Python API.
 
-Sprint 3 fix 3.3: ``ExploreResult`` was a plain ``dict`` returned from
-``run_explore``, while ``CommitResult`` was a proper dataclass. The
-asymmetry forced callers to use ``result["spa_p_value"]`` for explore
-but ``result.spa_p_value`` for commit. This module defines a typed
-``ExploreResult`` that:
+``ExploreResult`` is the typed return of ``run_explore`` (attribute and
+dict-style access). ``CommitResult`` lives in ``commit.py``.
 
-1. Supports attribute access (``result.spa_p_value``) for type safety.
-2. Supports dict-style access (``result["spa_p_value"]``) for backward
-   compatibility with the prior dict-based API and existing tests.
-3. Supports ``.keys()``, ``.values()``, ``.items()``, ``len()``, and
-   ``in`` so existing code that iterates the dict keeps working.
-
-This is a structural backward-compatible upgrade: existing
-``result["spa_p_value"]`` access still works; new code can use
-``result.spa_p_value`` for type safety.
+Explore surfaces SPA (and related trade/equity fields). Holdout PSR is
+on the commit path, not on explore, matching the sealed explore/commit
+split used in the manuscript sample.
 """
 from __future__ import annotations
 
@@ -24,38 +15,11 @@ from typing import Iterator, Any
 
 @dataclass
 class ExploreResult:
-    """Result of a single ``run_explore`` call.
+    """Result of one ``run_explore`` call (seal stays closed).
 
-    Fields are the same ones the prior dict-returning ``run_explore``
-    exposed. Use attribute access (``r.spa_p_value``) for type safety;
-    dict-style access (``r["spa_p_value"]``) is preserved for backward
-    compatibility.
-
-    Examples
-    --------
-    Attribute access (preferred):
-
-    >>> r = ExploreResult(experiment="v1", n_oos_trades=10, ...)
-    >>> r.spa_p_value
-    0.123
-
-    Dict-style access (backward compat):
-
-    >>> r["spa_p_value"]
-    0.123
-    >>> "spa_p_value" in r
-    True
-    >>> list(r.keys())
-    ['experiment', 'n_oos_trades', 'n_executed', 'n_rejected',
-     'final_equity', 'spa_p_value', 'narrowed_symbols',
-     'spa_naive_p_value']
-
-    Iteration and unpacking:
-
-    >>> for key, value in r.items():
-    ...     print(f"{key} = {value}")
-    >>> len(r)
-    8
+    Supports attribute access (``r.spa_p_value``) and dict-style access
+    (``r["spa_p_value"]``) for older callers. SPA fields are explore
+    metrics; holdout PSR is produced by ``run_commit`` / ``commit_to_holdout``.
     """
 
     experiment: str
@@ -65,15 +29,9 @@ class ExploreResult:
     final_equity: float
     spa_p_value: float
     narrowed_symbols: list[str]
-    # spa_naive_p_value: the legacy circular-permutation SPA p. When WFA
-    # trial_r_nets are available, spa_p_value carries the Hansen-corrected
-    # p (claim #3 Blocker A); this field preserves the legacy statistic.
-    # ``getattr(..., None)`` in run_explore keeps the MockCandidate/
-    # StubCandidate test stubs (which set only spa_p_value) green.
-    # Declared LAST (after the non-default narrowed_symbols) to satisfy
-    # the dataclass rule "non-default follows non-default"; its keyword
-    # default (None) makes it optional for all existing positional/keyword
-    # constructors.
+    # Legacy circular-permutation SPA p. When Hansen-literal path is
+    # active, spa_p_value is the Hansen-corrected p; this field keeps the
+    # legacy statistic. Optional default for older constructors/stubs.
     spa_naive_p_value: float | None = None
 
     # ------------------------------------------------------------------

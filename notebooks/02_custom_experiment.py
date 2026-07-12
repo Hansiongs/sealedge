@@ -22,13 +22,12 @@ def make_code(s):
 nb = {
     "cells": [
         make_md(
-            "# 02 — Custom Experiment\n"
+            "# 02 - Custom Experiment\n"
             "\n"
-            "How to register a new strategy and run the full pipeline.\n"
+            "Register a new strategy and run explore (and optionally commit).\n"
             "\n"
-            "Every experiment lives in `quant_lib/experiments/` as a "
-            "small Python file that combines a `Hypothesis` with a "
-            "`StrategyConfig` and calls `register()`."
+            "Each experiment is a small module under `quant_lib/experiments/` "
+            "that builds a `Hypothesis` + config and calls `register()`."
         ),
         make_md("## 1. Define your hypothesis"),
         make_code(
@@ -38,10 +37,8 @@ nb = {
             "    ExperimentConfig, register,\n"
             ")\n"
             "\n"
-            "# The narrative fields are required for the experiment journal\n"
-            "# and MUST be written BEFORE seeing any data. Use the factory\n"
-            "# helpers (``for_vol_compression``, ``for_pullback_sniper``)\n"
-            "# to get the correct ``strategy_type`` + default search space.\n"
+            "# Write narrative fields before peeking at evaluation data.\n"
+            "# Factories set strategy_type + default search space.\n"
             "hyp = for_vol_compression(\n"
             "    name=\"my_breakout_v1\",\n"
             "    mechanism=(\n"
@@ -67,10 +64,9 @@ nb = {
             "    strategy_type=\"vol_compression\",  # matches Hypothesis\n"
             "    hypothesis=hyp,\n"
             "    period=PeriodConfig(\n"
-            "        train_start=\"2020-01-01\",\n"
-            "        train_end=\"2024-12-31\",\n"
-            "        # holdout_start/end auto-resolve to a post-training\n"
-            "        # period of length ``holdout_months`` (default 6).\n"
+            "        train_start=\"2021-07-01\",\n"
+            "        train_end=\"2025-12-31\",\n"
+            "        # holdout auto-resolves post-training (default 6 months).\n"
             "    ),\n"
             "    universe=UniverseConfig(\n"
             "        symbols=[\"BTCUSDT\", \"ETHUSDT\", \"SOLUSDT\"],\n"
@@ -84,7 +80,7 @@ nb = {
             "    ),\n"
             ")"
         ),
-        make_md("## 3. Register and run"),
+        make_md("## 3. Register and run explore"),
         make_code(
             "import quant_lib\n"
             "\n"
@@ -92,27 +88,26 @@ nb = {
             "result = quant_lib.run_explore(\n"
             "    experiment_name=\"my_breakout_v1\",\n"
             "    cache_dir=\"./data_cache\",\n"
-            ")"
+            ")\n"
+            "print(result.spa_p_value, result.n_oos_trades)"
         ),
         make_md(
-            "## 4. Inspect & commit (Phase 4)\n"
+            "## 4. Optional holdout commit\n"
             "\n"
-            "If the SPA p-value is below your threshold and you want to "
-            "test the strategy against the holdout:\n"
+            "Explore returns SPA/trades only. Holdout PSR is on commit:\n"
             "\n"
             "```python\n"
-            "if result[\"spa_p_value\"] < 0.05:\n"
+            "if result.spa_p_value < 0.05:\n"
             "    commit_result = quant_lib.run_commit(\n"
             "        experiment_name=\"my_breakout_v1\",\n"
             "        cache_dir=\"./data_cache\",\n"
             "    )\n"
-            "    print(f\"PSR: {commit_result.psr:.4f}\")\n"
+            "    print(f\"Holdout PSR: {commit_result.psr:.4f}\")\n"
             "    print(f\"Final equity: ${commit_result.final_equity:,.2f}\")\n"
             "```\n"
             "\n"
-            "**WARNING:** `run_commit` is IRREVERSIBLE. The holdout seal "
-            "is broken once you commit; subsequent runs cannot re-test "
-            "against the same holdout."
+            "**Warning:** `run_commit` is irreversible for that seal. "
+            "Paper-grade `scripts/reproduce.py` does not call it."
         ),
     ],
     "metadata": {

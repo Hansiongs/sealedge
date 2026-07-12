@@ -1,7 +1,7 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 type: software
-title: "sealedge: Honest backtesting for crypto strategies"
+title: "sealedge: Sealed-holdout backtesting for crypto strategies"
 abstract: >-
   A quantitative trading backtesting framework enforcing methodological
   discipline (no look-ahead, sealed holdout, multiple-testing correction,
@@ -12,7 +12,7 @@ authors:
   - family-names: "Winarto"
     given-names: "Hansen"
     email: "hansenwinarto@binus.ac.id"
-    affiliation: "BINUS Online Learning, Bina Nusantara University"
+    affiliation: "Information Systems Department, BINUS Online Learning, Bina Nusantara University"
 version: 0.5.1
 date-released: "2026-07-05"
 license: GPL-3.0-or-later

@@ -1,0 +1,50 @@
+{
+  "metadata": {
+    "captured_at_utc": "2026-07-11T18:41:19.054882+00:00",
+    "python_version": "3.11.15",
+    "platform": "Windows-10-10.0.19045-SP0",
+    "system": "Windows",
+    "machine": "AMD64",
+    "quant_lib_version": "0.5.1",
+    "git_commit": "ab0b5f8aae7865841351e72ea1555a15f8e1fa6d",
+    "demo_kind": "synthetic_hmac_holdout",
+    "touches_registered_experiments": false,
+    "touches_market_cache": false
+  },
+  "ok": true,
+  "error": null,
+  "steps": [
+    {
+      "id": 1,
+      "name": "seal_and_verify",
+      "is_sealed": true,
+      "verify": true,
+      "data_hash_prefix": "aaaaaaaaaaaa...",
+      "pass": true
+    },
+    {
+      "id": 2,
+      "name": "tamper_detected",
+      "verify_after_tamper": false,
+      "pass": true
+    },
+    {
+      "id": 3,
+      "name": "commit_break_once",
+      "was_intact": true,
+      "is_broken": true,
+      "is_sealed": false,
+      "hash_before_prefix": "aaaaaaaaaaaa...",
+      "hash_after_prefix": "aaaaaaaaaaaa...",
+      "pass": true
+    },
+    {
+      "id": 4,
+      "name": "one_shot_invariants",
+      "second_break_was_intact": false,
+      "reseal_raises_runtime_error": true,
+      "pass": true
+    }
+  ],
+  "seal_path_basename": "holdout_demo_2025-01-01_2025-06-30.json"
+}

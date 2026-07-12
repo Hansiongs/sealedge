@@ -1,11 +1,5 @@
 """
-Walk-Forward Analysis -- Optuna-based parameter optimization.
-
-Extracted from Hans_Quant_Systems.py:
-  - WalkForwardObjective (lines 1880-2051)
-  - _get_purge_days (lines 2091-2110)
-  - _adaptive_trials (lines 2113-2146)
-  - run_wfa_per_symbol (lines 2180-2517)
+Walk-forward analysis: Optuna IS search + purged OOS folds.
 """
 
 import numpy as np
@@ -92,7 +86,7 @@ class WalkForwardObjective:
         else:
             self.bar_weights = np.ones(n_bars, dtype=np.float64)
 
-        # Hansen-literal SPA support (claim #3 Blocker A): collect the IS
+        # Hansen-literal SPA support: collect the IS
         # PnL array of every Optuna trial in this fold so the SPA null can
         # resample per-trial loss-differentials (Hansen 2005 Eq.6-8). A
         # ``None`` sentinel marks trials that short-circuited an early
@@ -651,7 +645,7 @@ def run_wfa_per_symbol(
             **best_p,
             # IS PnL array per Optuna trial in this fold (None sentinels for
             # trials that short-circuited an early return). Consumed by the
-            # Hansen-literal SPA null (claim #3) via candidate aggregation.
+            # Hansen-literal SPA null via candidate aggregation.
             # Stored as ``.tolist()`` (JSON-friendly lists of float) so the
             # WFA reproducibility tests' ``params_a == params_b`` dict
             # equality on fold_params stays unambiguous -- comparing

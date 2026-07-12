@@ -1,33 +1,12 @@
 """
-Reporting: super detail output for white and black testing.
+Rich console reports for explore (white) and commit (black).
 
-Per the user's requirement: no verdict, but ALL useful statistics
-printed for the user to interpret.
+No auto-verdict: print metrics; the user interprets them.
 
-White Test Output (13 sections):
-  1. Hypothesis
-  2. Universe
-  3. Feature engineering
-  4. WFA per symbol
-  5. Portfolio simulation
-  6. SPA test
-  7. PSR + ESS
-  8. Per-symbol Wilcoxon + FDR
-  9. Regime stats
-  10. Parameter stability
-  11. Edge classification
-  12. Bootstrap
-  13. Journal & FDR context
-
-Black Test Output (8 sections):
-  1. Pre-commit verification
-  2. Holdout simulation
-  3. Per-trade stats
-  4. Equity curve stats
-  5. PSR + ESS holdout
-  6. Risk metrics
-  7. Seal & audit
-  8. Final summary (no verdict)
+Explore report sections include hypothesis, universe, WFA, portfolio,
+SPA and related OOS diagnostics, FDR context, and other sections.
+Commit report sections include seal verification, holdout simulation,
+holdout PSR/ESS, risk metrics, and audit summary.
 """
 
 from typing import TYPE_CHECKING

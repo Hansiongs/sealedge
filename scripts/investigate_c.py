@@ -1,7 +1,7 @@
-"""Investigate why funding_rate_carry produces 3446 trades vs 438/180.
+"""Why funding_rate_carry has far more trades than VC/PS (paper sample).
 
-Counts actual signal fires per bar for each strategy type, then
-compares to expected from threshold configuration.
+Counts per-bar signal fires vs threshold config. Diagnostic only; not
+part of the paper-grade reproduce path.
 """
 import os
 import sys

@@ -1,8 +1,7 @@
 """
-Universe construction tools -- mechanical, point-in-time asset selection.
+Universe construction: mechanical, point-in-time symbol filters.
 
-Based on Phase 1 of the framework: selection criteria must be
-mechanical, point-in-time, and independent of strategy performance.
+Selection must not use strategy performance on the evaluation window.
 """
 
 import pandas as pd

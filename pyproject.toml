@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sealedge"
 version = "0.5.1"
-description = "Honest backtesting toolkit for quantitative trading strategies with sealed holdout discipline"
+description = "Sealed-holdout backtesting toolkit for quantitative trading strategies with HMAC holdouts and SPA/PSR defaults"
 readme = "README.md"
 license = {text = "GPL-3.0-or-later"}
 requires-python = ">=3.10"

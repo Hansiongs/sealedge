@@ -1,9 +1,10 @@
 """
-quant_lib.tools -- White-box public API.
+quant_lib.tools -- public composable API.
 
-All functions are composable building blocks. You control the flow.
+Building blocks for custom pipelines. You own the control flow.
 
-Usage:
+Usage::
+
     from quant_lib.tools import fetch_klines, compute_features, walk_forward, spa_test
 """
 

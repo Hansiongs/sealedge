@@ -1,17 +1,9 @@
-"""quant_exp CLI entry point.
+"""quant_exp CLI entry point (Typer).
 
-Provides a Typer-based CLI with 6 subcommands:
-- init: Scaffold a new experiment
-- list: List registered experiments
-- show: Show details of one experiment
-- explore: Run OOS exploration (Phase 0-3)
-- commit: Run final commit to holdout (Phase 4)
-- status: Show holdout seal status and recent runs
-- migrate-seals: Re-sign holdout seals with the current HMAC secret
+Commands: init, list, show, explore, commit, status, migrate-seals.
 
-NOTE (0.2.2): experiment auto-discovery is triggered by
-``quant_lib.experiments.__init__`` (which imports built_in and calls
-discover_experiments()). No need to import built_in here.
+Experiment auto-discovery runs when ``quant_lib.experiments`` is imported
+(built_in + discover_experiments). No need to import built_in here.
 """
 from __future__ import annotations
 
@@ -20,26 +12,14 @@ import typer
 
 app = typer.Typer(
     name="quant_exp",
-    help="quant_exp: honest backtesting for crypto strategies.",
+    help="quant_exp: sealedge CLI for crypto strategy research.",
     no_args_is_help=True,
     add_completion=False,
 )
 
 
 def _version_callback(value: bool) -> None:
-    """Print version and exit.
-
-    Parameters
-    ----------
-    value : bool
-        If True, print the version and exit. Wired to the ``--version``
-        Typer option.
-
-    Returns
-    -------
-    None
-        Exits the process via ``typer.Exit()``.
-    """
+    """Print version and exit when ``--version`` is set."""
     if value:
         from quant_lib import __version__
         typer.echo(f"quant_exp {__version__}")
@@ -59,7 +39,7 @@ def main(
         0, "-v", "--verbose", count=True, help="Increase verbosity (-v, -vv)."
     ),
 ) -> None:
-    """quant_exp: honest backtesting for crypto strategies.
+    """quant_exp: sealedge CLI for crypto strategy research.
 
     Parameters
     ----------

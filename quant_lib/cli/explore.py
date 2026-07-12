@@ -1,6 +1,6 @@
-"""quant_exp explore -- Run OOS exploration (Phase 0-3).
+"""quant_exp explore -- OOS exploration with holdout still sealed.
 
-Loads data, runs WFA + SPA on the training set. Holdout stays sealed.
+Loads data, runs WFA + SPA on the training window.
 """
 
 from __future__ import annotations

@@ -1,8 +1,8 @@
 # Methodology
 
-This document is the methodology section for any paper that uses
-`quant_lib`. It documents the statistical methods, design choices,
-and justifications so that reviewers can audit the framework.
+Methodology notes for papers and audits that use sealedge
+(`quant_lib` imports). Statistical methods, design choices, and
+line-level pointers so a reviewer can check the code.
 
 **Source code references** are in the form `path/to/file.py:line` so
 that any claim can be traced to a specific line of code.
@@ -30,7 +30,7 @@ prevent data snooping. The mechanism is implemented in
    - If hash mismatch → raise `SealVerificationFailed` (data
      tampered) (`commit.py:161-166`)
    - Use the cached BTC extended data for EMA features (no
-     re-fetch, ensuring hash consistency) (`commit.py:170-187`)
+     re-fetch, so the hash stays consistent) (`commit.py:170-187`)
    - Break the seal (irreversible; can only be used once)
      (`commit.py:356`)
 
@@ -56,16 +56,15 @@ Without a sealed holdout, an analyst can:
 - Tune the strategy based on what "works" on the holdout
 - Report inflated results
 
-The sealed holdout guarantees that the holdout data and all
-features-affecting inputs are **never modified** between sealing
-and breaking, and that any modification is detected.
+While the seal is intact, holdout OHLCV and feature-affecting inputs
+must not change. Any change should fail verification at commit.
 
 ### References
 
-- `audit/holdout.py` — `HoldoutSet`, `HoldoutSeal` classes
-- `research/session.py:54-92` — `_compute_holdout_data_hash` (SHA256, all OHLCV + BTC extended)
-- `research/session.py:251-292` — `_load_holdout_ohlcv` (preserves BTC extended)
-- `research/commit.py:144-166` — seal verification at commit time
+- `audit/holdout.py`, `HoldoutSet`, `HoldoutSeal` classes
+- `research/session.py:54-92`, `_compute_holdout_data_hash` (SHA256, all OHLCV + BTC extended)
+- `research/session.py:251-292`, `_load_holdout_ohlcv` (preserves BTC extended)
+- `research/commit.py:144-166`, seal verification at commit time
 
 ## 2. Purge Days
 
@@ -75,7 +74,7 @@ boundary.
 
 ### Why it's needed
 
-In live trading, there is no boundary between "IS" and "OOS" — the
+In live trading, there is no boundary between "IS" and "OOS", the
 strategy uses all available history continuously. In backtest with
 WFA, there is an artificial seam at the IS-OOS boundary.
 
@@ -169,13 +168,13 @@ for sym, folds in all_fold_params.items():
 ### Anti-overfit stack (no additional stability needed)
 
 The framework already has **4 layers of anti-overfit**:
-1. **PSR** (Probabilistic Sharpe Ratio) — accounts for skew/kurtosis,
+1. **PSR** (Probabilistic Sharpe Ratio), accounts for skew/kurtosis,
    not raw SR (`core/_testing.py:18-40`)
-2. **ESS** (Effective Sample Size) — handles autocorrelation
+2. **ESS** (Effective Sample Size), handles autocorrelation
    (`core/_testing.py:191-202`)
-3. **FDR** (Benjamini-Hochberg) — per-symbol correction
+3. **FDR** (Benjamini-Hochberg), per-symbol correction
    (`core/_testing.py:43-88`)
-4. **L2 regularization** — pulls params to center
+4. **L2 regularization**, pulls params to center
    (`core/_wfa.py:208-220`)
 
 Adding stability-weighting (e.g., "mean PSR across folds") would be
@@ -193,7 +192,7 @@ code should use `pick_best_params_per_symbol`.
 Beyond strategy edge, `quant_lib` applies **adaptive risk
 allocation** across symbols as part of the trading system. This is
 intentional: crypto markets are 24/7, highly volatile, with frequent
-gap events and funding costs — risk management is as critical as
+gap events and funding costs, risk management is as critical as
 entry-timing edge.
 
 ### Mechanism
@@ -247,7 +246,7 @@ and the system adapts over time.
 ### PSR (Probabilistic Sharpe Ratio)
 
 `core/_testing.py:17-145`. Adjusts the Sharpe ratio for skewness
-and kurtosis using the Bailey & Lopez de Prado (2012) formula:
+and kurtosis using the Bailey & Lopez de Prado (2014) formula:
 
 ```
 PSR = Φ((SR - SR_benchmark) / σ_SR)
@@ -286,7 +285,7 @@ fix to documentation; the code was correct in v0.3.1+).
   zero/negative variance, ESS < 2 in weighted mode, or extreme SR
   (> 1e6, usually from near-constant input).
 
-Reference: Bailey & Lopez de Prado (2012), "The Sharpe Ratio
+Reference: Bailey & Lopez de Prado (2014), "The Sharpe Ratio
 Efficient Frontier"; Bailey & Lopez de Prado (2014), "The
 Deflated Sharpe Ratio."
 
@@ -303,7 +302,14 @@ the public API:
   timing between assets is unchanged). Phipson & Smyth (2010) add-one
   correction ``p = (n_exceed + 1) / (n_iters + 1)``. The framework's
   defence-in-depth: this is the **stable, regression-tested** null that
-  every legacy 3-tuple caller pins.
+  every legacy 3-tuple caller pins. **Degenerate anchor guard:** if the
+  observed trade span covers ≥80% of the calendar hour range, the
+  circular null is nearly identical to the observed path and the legacy
+  path returns `p = NaN` (not a crash). Hansen-path `spa_p_value` is
+  independent of that guard. In the paper-grade explore sample under
+  `replication/output_paper_grade/`, `spa_naive_p_value` is `NaN` for
+  all three strategies while `spa_p_value` remains the Hansen (or
+  Hansen-fallback) number reported in the manuscript table.
 
 * **Hansen-literal path** (opt-in via
   `recenter_policy="hansen_literal"` + `trial_r_nets` +
@@ -314,14 +320,14 @@ the public API:
   with nuisance-parameter discarding ``Ā_k_trunc = Ā_k * 1{Ā_k ≥ 0}``,
   Eq.8 cross-strategy maximum statistic ``T_null_max = max_k T_acc^k_b``,
   and the Phipson-Smyth add-one. The cross-strategy max is the
-  multiple-testing correction — the entire point of White's Reality
-  Check — that the legacy circular-permutation test lacks. The Hansen
+  multiple-testing correction, the entire point of White's Reality
+  Check, that the legacy circular-permutation test lacks. The Hansen
   block operates numpy-only on `pnl_array`s (no
   `simulate_trailing_stop_trade` / `simulate_full_portfolio` calls),
   preserving the SPA spy invariant on BOTH paths.
 
 Disclosed finite-sample divergences from a strict Hansen reading
-(do NOT silently rescale or "fix" these — they are paper-disclosed):
+(do NOT silently rescale or "fix" these, they are paper-disclosed):
 
 1. **Block length** uses Politis & Romano ``p = max(1, round(n_k^(1/3)))``
    per trial (collected at runtime) unless
@@ -330,32 +336,32 @@ Disclosed finite-sample divergences from a strict Hansen reading
    destabilizes max-stat in finite sample).
 2. **Sample-size rescale**: Hansen assumes a common evaluation window
    ``n_k = N`` for every strategy. Optuna trial folds vary in `n_k`. We
-   do NOT add a `√(N/n_k)` rescale — this is paper-disclosed and
+   do NOT add a `√(N/n_k)` rescale, this is paper-disclosed and
    consistent with Hansen's per-strategy bootstrap.
 3. **Two-stage q bootstrap** (Hansen 2005 §3) is omitted. The Eq.8
    max-stat + Eq.7 recenter is the data-snooping test the framework
    needs; the spurious-rejection region refinement is future work.
 4. **Empirical-only finite-sample uniformity** (caveat, not theorem):
    KS<0.25 is an empirical finite-sample claim (Hansen N(0,1) under
-   H0 is asymptotic — B→∞, n_k→∞ — and the recenter injects `O(1/B)`
+   H0 is asymptotic, B→∞, n_k→∞, and the recenter injects `O(1/B)`
    bias at finite B). The legacy KS<0.25 is reported as "empirical
    finite-sample calibration; asymptotic uniformity holds under
-   Hansen (2005) Assumption 1." Honest power may be a negative finding:
-   max-of-K at K~10³–10⁴ may price realistic drift out, in which case
-   the paper reports `reject(0.3–0.5 R/trade) < 0.75` as a guardrail
+   Hansen (2005) Assumption 1." Finite-sample power of max-of-K may be low:
+   max-of-K at K~10³, 10⁴ may price realistic drift out, in which case
+   the paper reports `reject(0.3, 0.5 R/trade) < 0.75` as a guardrail
    finding (not silently inflate drift to manufacture a pass).
 
 NaN-safe fallback: any ``trial_r_nets=None`` / empty / `std(d_k)<=0` /
 `observed N<2` caller degrades to `p_hansen = p_naive` (legacy p) with
 `stats["fallback"]=True`. Legacy ``portfolio_spa`` callers passing no
-flags see byte-identical 3-tuples — the Hansen block is opt-in.
+flags see byte-identical 3-tuples, the Hansen block is opt-in.
 
 References: Hansen (2005), "A Test for Superior Predictive Ability"
 (provides the Eq.6-8 test-statistic framework); Phipson & Smyth (2010),
 "Permutation P-values Should Never Be Zero" (provides the add-one
 correction applied here). Note: a prior reference list entry cited
 "Davé & Seal (2008)" for this correction; that paper does not
-address the add-one — the correct citation is Phipson & Smyth (2010).
+address the add-one, the correct citation is Phipson & Smyth (2010).
 
 ### FDR (Benjamini-Hochberg)
 
@@ -397,7 +403,7 @@ Total cost is clamped at 5.0 R (`core/_engine.py:254`).
 ## 9. Engine Implementation Notes
 
 `core/_engine.py:fast_trade_loop` is a **Numba @njit** compiled
-function. Numba is opaque to coverage tools — line coverage is
+function. Numba is opaque to coverage tools, line coverage is
 not measurable. The tests verify behavior, not line coverage.
 
 Two strategy types supported via `strategy_type` int (0=vol_compression,
@@ -449,5 +455,5 @@ will be documented in `CHANGELOG.md` with version bumps.
 **Drift detection**: when bumping `pyproject.toml` `version`, also
 update the version pin in this section and re-validate that every
 formula reference (`core/_testing.py:…`, `core/_wfa.py:…`,
-`core/_spa.py:…`) still matches the current source — line numbers
+`core/_spa.py:…`) still matches the current source, line numbers
 shift as the code evolves.

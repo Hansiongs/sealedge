@@ -1,34 +1,10 @@
 """
-Configuration -- STATIC dict, DEFAULTS dict, GLOBAL_SEED, WARMUP_BARS.
+Config: ``STATIC`` (infra), ``DEFAULTS`` (experiment defaults), seed.
 
-Two-layer config after Phase 4 refactor:
-
-- ``STATIC``: Infrastructure-level constants. Exchange costs, test
-  parameters, WFA purge (depends on feature lookback), feature windows.
-  These rarely change and are framework-level.
-
-- ``DEFAULTS``: Per-experiment defaults that mirror
-  ``quant_lib.experiments.base.StrategyConfig``. Used internally by
-  runner, wfa, spa, etc. when no Candidate is available. Per-experiment
-  overrides happen via ``StrategyConfig`` in experiment files.
-
-Removed from STATIC (Phase 4):
-- ``asset_risk_weights``: redundant; per-fold PF-weighted allocation
-  in ``core/_risk_allocation.py`` now sets per-trade ``risk_weight``
-  directly (no static asset-level weighting needed).
-- ``asset_baseline_trades``: per-experiment choice; pass via
-  ``StrategyConfig.expected_trades_per_year``.
-- ``global_position_limit``: per-experiment choice; pass via
-  ``StrategyConfig.global_position_limit``.
-
-Sprint 3 fix 3.1: ``STATIC`` and ``DEFAULTS`` are now ``TypedDict``s
-instead of ``dict[str, Any]``. This gives mypy precise type-checking on
-all 89+ call sites (``STATIC["fee_taker"]`` is now ``float``, not ``Any``)
-without changing runtime behavior -- TypedDict IS a regular ``dict``
-at runtime, so all existing call sites (e.g.,
-``STATIC["wfa_purge_days"]``, ``DEFAULTS["leverage"]``) work unchanged.
-The values are still mutable dicts so tests that mutate them (e.g.,
-``conftest.py`` resetting ``DATA_DIR``) keep working.
+``STATIC`` holds exchange costs, SPA/WFA knobs, feature windows.
+``DEFAULTS`` mirrors ``StrategyConfig`` fields for internal callers
+without a Candidate. Both are TypedDict-backed mutable dicts so mypy
+sees types and tests can still patch values.
 """
 
 from typing import TypedDict
@@ -87,7 +63,7 @@ class StaticConfig(TypedDict):
     # SPA Hansen-literal stationary-bootstrap expected block length. 0 = use
     # the Politis-Romano default p = max(1, round(n_k ** (1/3))) per trial;
     # >0 forces a fixed expected block length (paper-disclosed calibration
-    # knob). Phase 5 (claim #3 Blocker A): Hansen (2005) SPA null uses a
+    # knob). Hansen (2005) SPA null uses a
     # Politis-Romano (1994) stationary block bootstrap over IS loss-
     # differentials; this knob overrides the n_k^(1/3) heuristic.
     spa_hansen_block_length_override: int

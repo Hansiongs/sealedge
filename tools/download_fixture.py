@@ -1,10 +1,10 @@
-"""Download a small BTCUSDT 1h CSV for integration testing.
+"""Download a small BTCUSDT 1h CSV for integration tests.
 
-Run from project root:
+From repo root::
+
     python tools/download_fixture.py
 
-Generates tests/fixtures/btcusdt_1h_2024_jan.csv (~14KB, 14 days).
-Safe to commit to repo.
+Writes ``tests/fixtures/btcusdt_1h_2024_jan.csv`` (~14 days). Safe to commit.
 """
 import requests
 import pandas as pd

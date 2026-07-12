@@ -1,23 +1,14 @@
 """
-ResearchSession: white-box iterative hypothesis exploration.
+ResearchSession: sealed-holdout research container.
 
-The session is the top-level container for a research project.
-It seals a single holdout block (one-shot), tracks all candidates
-and commits, and provides the entry points for the white testing
-phases (universe, edge, narrowing) per candidate.
+One session owns one holdout seal, many candidates, and the explore
+phases (universe, edge, narrowing). Commit is a separate one-shot call
+that re-verifies the seal hash then breaks it.
 
-Differences from the old `StrategyPipeline`:
-- One session, many candidates (not one pipeline per hypothesis)
-- Holdout sealed once per session, not per pipeline
-- Auto-logs every candidate to journal + registry
-- FDR (Benjamini-Hochberg) for multi-commit adjustment
-- No kill criteria (user interprets via success_criteria text)
-- No verdict (user interprets printed metrics)
+No auto-verdict: metrics and success_criteria text are for the user.
 
-C-2 fix: Holdout data is loaded and hashed at session creation.
-The seal records a real SHA256 of the data, and ``commit_to_holdout``
-re-computes the hash and aborts if the data has been tampered with
-between session creation and commit.
+At session creation the holdout (and feature-affecting inputs) are
+hashed; ``commit_to_holdout`` re-hashes and aborts on mismatch.
 """
 
 import hashlib
@@ -162,7 +153,7 @@ class SessionCommitRecord:
     n_trades : int
         Number of trades executed during the holdout phase.
     psr : float
-        Probabilistic Sharpe Ratio of the commit (claim #2 statistic).
+        Probabilistic Sharpe Ratio of the holdout commit.
     seal_hash : str
         SHA256 hex digest identifying the holdout seal under which
         the commit was recorded.
@@ -221,7 +212,7 @@ class ResearchSession:
     _btc_extended : pd.DataFrame, optional (INTERNAL/TESTING)
         Pre-loaded BTC extended data covering ``btc_data_start`` to
         ``hold_end``. Used together with ``_holdout_data`` when tests
-        want to verify the no-peek guarantee for the BTC extended
+        want to verify the no-peek check for the BTC extended
         range (Phase 2.2). Ignored if ``_holdout_data`` is None.
         Production code should NOT pass this.
     _holdout_hash : str, optional (INTERNAL/TESTING)

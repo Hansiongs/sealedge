@@ -1,12 +1,10 @@
 """
-quant_lib entry point.
+``python -m quant_lib`` entry point.
 
-For the modern CLI (with list, show, explore, commit, status), use
-the installed ``quant_exp`` command (see ``pyproject.toml``
-``[project.scripts]``). This module delegates to it for backward
-compatibility with ``python -m quant_lib <command>``.
+Delegates to the installed ``quant_exp`` CLI (``quant_lib.cli.main.app``).
 
-Usage:
+Usage::
+
     python -m quant_lib --help
     python -m quant_lib list
     python -m quant_lib show vol_compression_v1

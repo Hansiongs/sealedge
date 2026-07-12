@@ -1,17 +1,17 @@
 """
-quant_lib -- Quantitative Strategy Testing Library
+quant_lib -- importable package for sealedge.
 
-Modular toolkit for honest backtesting with audit trail.
-Based on the research session framework: Hypothesis -> Universe -> Edge -> Narrow -> Holdout.
+Sealed-holdout research path for quantitative backtests:
+Hypothesis -> Universe -> Edge -> Narrow -> Holdout.
 
 Modules:
-    tools/    : White-box public API  (composable, you control the flow)
-    audit/    : Integrity layer       (hypothesis journal, experiment counter, holdout seal)
-    core/     : Private implementation (do not import directly)
-    research/ : ResearchSession (white-box iterative) + commit_to_holdout (black-box)
-    experiments/ : Experiment registry (user-defined strategies, auto-discovery)
-    cli/      : quant_exp CLI (list, show, explore, commit, status)
-    utils/    : Shared utilities (config, git, logging)
+    tools/       : Public composable API (you own the flow)
+    audit/       : Hypothesis journal, experiment counter, holdout seal
+    core/        : Private implementation (do not import)
+    research/    : ResearchSession + commit_to_holdout
+    experiments/ : Experiment registry (auto-discovery)
+    cli/         : quant_exp CLI
+    utils/       : Shared config / git / logging helpers
 """
 
 # Sprint 1 fix: avoid eager import of heavy submodules (tools, core,
@@ -33,13 +33,9 @@ _LAZY_MODULES = ("tools", "audit", "core", "research")
 def __getattr__(name: str):
     """PEP 562 lazy submodule import.
 
-    Resolves ``quant_lib.tools``, ``quant_lib.audit``, ``quant_lib.core``,
-    ``quant_lib.research`` on first attribute access. This keeps
-    ``import quant_lib`` cheap for users who only need, e.g., the
-    high-level ``run_commit`` API or just ``__version__``.
-
-    Also resolves ``ExploreResult`` (Sprint 3 fix 3.3) without forcing
-    the research submodule to load.
+    Lazy-load ``tools``, ``audit``, ``core``, ``research`` on first access
+    so ``import quant_lib`` stays cheap when you only need ``__version__``
+    or ``run_commit``. Also resolves ``ExploreResult`` / ``CommitResult``.
 
     Parameters
     ----------
@@ -109,27 +105,25 @@ def run_explore(
     cache_dir: str = "./data_cache",
     n_spa_iters: int = 2000,
 ) -> "ExploreResult":
-    """Run Phase 0-3 (exploration) on an experiment.
+    """Run explore (phases 0-3). Holdout seal stays closed.
 
-    Loads data, runs WFA + SPA on the training set. Holdout stays sealed.
+    Loads data, runs WFA + SPA on the training/OOS window. Does not
+    break the seal and does not return holdout PSR (that is ``run_commit``).
 
     Parameters
     ----------
     experiment_name : str
-        Name of a registered experiment (see ``quant_exp list``).
+        Registered experiment name (``quant_exp list``).
     cache_dir : str
-        Directory for cached data.
+        Data cache directory.
     n_spa_iters : int
-        Number of SPA permutation iterations (0 to skip SPA).
+        SPA iterations (default 2000, paper-grade; 0 skips SPA).
 
     Returns
     -------
     ExploreResult
-        Sprint 3 fix 3.3: typed dataclass with the explore metrics.
-        For backward compatibility, the return value also supports
-        ``dict(result)`` (returns a dict view) and ``result["key"]``
-        (read-only dict-style access). New code should use attribute
-        access (``result.spa_p_value``) for type safety.
+        Explore metrics (SPA, trades, equity, narrowed symbols).
+        Dict-style access still works for older callers.
     """
     from quant_lib.research._pipeline import build_explore_candidate
     from quant_lib.research import ExploreResult
@@ -149,10 +143,8 @@ def run_explore(
         n_rejected=cand.n_rejected,
         final_equity=cand.final_equity,
         spa_p_value=cand.spa_p_value,
-        # spa_naive_p_value: Hansen-literal SPA landed the legacy p here
-        # while spa_p_value now carries the Hansen-corrected p (claim #3).
-        # getattr (not bare attr) -- the MockCandidate/StubCandidate test
-        # stubs only set spa_p_value, so bare attr raises AttributeError.
+        # spa_naive_p_value: legacy SPA p when Hansen path sets spa_p_value.
+        # getattr: MockCandidate/StubCandidate stubs may only set spa_p_value.
         spa_naive_p_value=getattr(cand, "spa_naive_p_value", None),
         narrowed_symbols=cand.narrowed_symbols,
     )
@@ -162,23 +154,15 @@ def run_commit(
     experiment_name: str,
     cache_dir: str = "./data_cache",
 ) -> "CommitResult":
-    """Run Phase 4 (commit) on an experiment.
+    """Run holdout commit (phase 4). Irreversible.
 
-    IRREVERSIBLE. Breaks the holdout seal. This holdout cannot be used
-    again after a successful commit.
-
-    Parameters
-    ----------
-    experiment_name : str
-        Name of a registered experiment.
-    cache_dir : str
-        Directory for cached data.
+    Breaks the seal after hash re-verification. Not used by the default
+    paper-grade ``scripts/reproduce.py`` path (explore only).
 
     Returns
     -------
     CommitResult
-        Full commit result with equity metrics, trade stats, PSR, etc.
-        See :class:`quant_lib.research.CommitResult` for fields.
+        Holdout equity/trade metrics and holdout PSR, among other fields.
     """
     from quant_lib.experiments import get
     from quant_lib.research.commit import commit_to_holdout

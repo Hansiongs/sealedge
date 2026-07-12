@@ -1,12 +1,8 @@
 """Generate notebooks/01_quick_start.ipynb from this source.
 
-Run this script once to (re)generate the .ipynb file:
-
     python notebooks/01_quick_start.py
 
-The notebook format is well-defined JSON; this script emits the
-canonical nbformat v4 structure so we don't need the `nbformat`
-package as a build-time dependency.
+Emits nbformat v4 JSON without needing the ``nbformat`` package.
 """
 from __future__ import annotations
 import json
@@ -14,7 +10,6 @@ from pathlib import Path
 
 
 def make_cell(cell_type: str, source: str) -> dict:
-    """Create an nbformat cell."""
     return {
         "cell_type": cell_type,
         "metadata": {},
@@ -33,13 +28,13 @@ def make_code(source: str) -> dict:
 nb = {
     "cells": [
         make_md(
-            "# 01 — Quick Start\n"
+            "# 01 - Quick Start\n"
             "\n"
-            "This notebook walks through the basic `quant_lib` workflow:\n"
-            "list available experiments, run exploration, inspect output.\n"
+            "Basic `quant_lib` workflow: list experiments, run explore, "
+            "inspect SPA metrics. Holdout seal stays closed.\n"
             "\n"
-            "**Prerequisites:** `pip install -e .` and a configured "
-            "`.env` with `QUANT_LIB_HMAC_SECRET` (run `quant_exp init`)."
+            "**Prerequisites:** `pip install -e .` and "
+            "`QUANT_LIB_HMAC_SECRET` (`quant_exp init`)."
         ),
         make_md("## Setup"),
         make_code(
@@ -49,44 +44,31 @@ nb = {
         make_md("## List available experiments"),
         make_code(
             "from quant_lib.cli.list_cmd import list_cmd\n"
-            "list_cmd()  # prints all registered experiments"
+            "list_cmd()  # prints registered experiments"
         ),
-        make_md("## Run exploration (Phase 0-3)"),
+        make_md("## Run explore (seal stays closed)"),
         make_code(
-            "# Run the exploration phase: fetch data, compute features,\n"
-            "# walk-forward analysis, SPA p-value, per-symbol risk allocation.\n"
-            "#\n"
-            "# Post Hansen-literal SPA (claim #3 Blocker A fix):\n"
-            "#  - ``result`` is an ``ExploreResult`` dataclass (Sprint 3 fix\n"
-            "#    3.3). 8 fields: ``experiment``, ``n_oos_trades``, ``n_executed``,\n"
-            "#    ``n_rejected``, ``final_equity``, ``spa_p_value``,\n"
-            "#    ``spa_naive_p_value``, ``narrowed_symbols``. ``spa_p_value``\n"
-            "#    now carries the Hansen-corrected p when WFA ``trial_r_nets``\n"
-            "#    are available (NaN-safe fallback to legacy p); the legacy\n"
-            "#    circular-permutation p is preserved in ``spa_naive_p_value``\n"
-            "#    for transparency. There is no ``stage`` / ``eligible_symbols``\n"
-            "#    attribute on ExploreResult (those are Candidate-only\n"
-            "#    legacy fields).\n"
+            "# Explore: data, WFA, SPA. Does not break the holdout seal.\n"
+            "# ExploreResult fields: experiment, n_oos_trades, n_executed,\n"
+            "# n_rejected, final_equity, spa_p_value, spa_naive_p_value,\n"
+            "# narrowed_symbols. spa_p_value is Hansen-corrected when\n"
+            "# trial_r_nets exist; spa_naive_p_value keeps the legacy p.\n"
             "result = quant_lib.run_explore(\n"
             "    experiment_name=\"vol_compression_v1\",\n"
             "    cache_dir=\"./data_cache\",\n"
             ")\n"
             "print(f\"Experiment: {result.experiment}\")\n"
             "print(f\"Narrowed symbols: {result.narrowed_symbols}\")\n"
-            "print(f\"SPA p-value (Hansen when trial_r_nets available, \"\n"
-            "      f\"fallback to legacy): {result.spa_p_value:.4f}\")\n"
-            "print(f\"Legacy SPA p-value (preserved for transparency): \"\n"
-            "      f\"{result.spa_naive_p_value}\")"
+            "print(f\"SPA p-value: {result.spa_p_value:.4f}\")\n"
+            "print(f\"Legacy SPA p-value: {result.spa_naive_p_value}\")\n"
+            "print(f\"OOS trades: {result.n_oos_trades}\")\n"
+            "print(f\"Final equity (explore path): {result.final_equity:.2f}\")"
         ),
         make_md("## Inspect result"),
         make_code(
-            "# ``edge_metrics`` is a flat TOP-LEVEL dict (Sprint 3 fix 3.3\n"
-            "# + Phase 6 wire-up), not the prior per-symbol nested shape.\n"
-            "# Keys: ``n_oos_trades``, ``n_executed``, ``n_rejected``,\n"
-            "# ``final_equity``, ``spa_p_value``, ``spa_naive_p_value``,\n"
-            "# ``spa_joint_k_trials``, ``hansen_fallback``. Documented\n"
-            "# in ``Candidate.run_edge_testing``.\n"
-            "for key, value in sorted(result.edge_metrics.items()):\n"
+            "# Dict-style access still works for older snippets.\n"
+            "for key in result.keys():\n"
+            "    value = result[key]\n"
             "    if isinstance(value, float):\n"
             "        print(f\"  {key}: {value:.4f}\")\n"
             "    else:\n"
@@ -95,8 +77,10 @@ nb = {
         make_md(
             "## Next steps\n"
             "\n"
-            "- See `02_custom_experiment.ipynb` to register your own strategy.\n"
-            "- See `03_interpreting_results.ipynb` for SPA/PSR/FDR deep-dive."
+            "- `02_custom_experiment.ipynb`: register your own strategy.\n"
+            "- `03_interpreting_results.ipynb`: SPA / PSR / FDR notes.\n"
+            "- Paper-grade sample is explore-only (SPA + trades); holdout "
+            "PSR is on `run_commit` only."
         ),
     ],
     "metadata": {

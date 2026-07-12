@@ -1,11 +1,12 @@
 # sealedge
 
-**Honest backtesting toolkit for quantitative trading strategies.**
+**Sealed-holdout backtesting for crypto strategies.**
 
-sealedge is a Python library for testing whether a trading strategy has a
-genuine statistical edge on historical cryptocurrency data. It enforces
-methodological discipline (no look-ahead, sealed holdouts, multiple-testing
-adjustment) so that reported results can be defended to a skeptical reviewer.
+sealedge is a Python library for checking whether a trading strategy has a
+statistical edge on historical crypto data under sealed-holdout and
+multiple-testing defaults. It packages research hygiene (no look-ahead,
+HMAC holdouts, SPA/PSR reporting) so results are re-runnable and hard to
+tamper with silently.
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL_3.0--or--later-blue.svg)](LICENSE)
@@ -14,16 +15,17 @@ adjustment) so that reported results can be defended to a skeptical reviewer.
 [![Lint](https://github.com/Hansiongs/sealedge/actions/workflows/lint.yml/badge.svg)](.github/workflows/lint.yml)
 [![Version 0.5.1](https://img.shields.io/badge/version-0.5.1-blue.svg)](CHANGELOG.md)
 
-## Why quant_lib?
+## Why sealedge?
 
-Standard backtesting tools have a **look-ahead problem**: the analyst
-sees the holdout data, tunes the strategy to "work" on it, and reports
-inflated results. quant_lib solves this with:
+The public name is **sealedge**. The importable package is still
+**`quant_lib`** (CLI: `quant_exp`). Most backtesters make it easy to peek at
+the holdout, tune until it "works", and ship a flattering report. sealedge
+pushes back with:
 
-- **Cryptographically-sealed holdouts** — tampering between
+- **Cryptographically-sealed holdouts**, tampering between
   initialization and commit is detected
-- **No look-ahead features** — every feature uses `shift(1)`
-- **Multiple-testing correction** — Bonferroni (1-indexed) + FDR (BH)
+- **No look-ahead features**, every feature uses `shift(1)`
+- **Multiple-testing correction**, Bonferroni (1-indexed) + FDR (BH)
 - **PSR + ESS** instead of raw Sharpe (accounts for skew/kurtosis,
   autocorrelation)
 - **SPA test** (two coexisting nulls selectable via `portfolio_spa`
@@ -33,7 +35,7 @@ inflated results. quant_lib solves this with:
     Phipson & Smyth (2010) add-one correction. Stable regression-tested
     3-tuple contract.
   - **Hansen-literal** (opt-in, `recenter_policy="hansen_literal"` +
-    `trial_r_nets=...` + `return_statistics=True`): Politis–Romano
+    `trial_r_nets=...` + `return_statistics=True`): Politis, Romano
     (1994) stationary block bootstrap over per-trial IS
     loss-differentials + Hansen (2005) Eq.7 recenter/discarding +
     Eq.8 cross-strategy max-statistic + Phipson & Smyth add-one.
@@ -173,9 +175,8 @@ run_explore("my_strategy")`.
 
 ## Architecture
 
-sealedge is organized in five layers, with strict dependency
-direction (arrows point downward — higher layers may import from
-lower, never the reverse):
+sealedge is organized in layers. Dependencies only point downward
+(higher layers may import lower ones, never the reverse):
 
 ```
 ┌────────────────────────────────────────────────────────────┐
@@ -322,9 +323,9 @@ make mutate        # mutation testing (slow, ~10-30 min)
 
 ## Documentation
 
-- **[docs/methodology.md](docs/methodology.md)** — Paper-grade
+- **[docs/methodology.md](docs/methodology.md)**, Paper-grade
   writeup (formulas, references, justifications).
-- **[CHANGELOG.md](CHANGELOG.md)** — Version history.
+- **[CHANGELOG.md](CHANGELOG.md)**, Version history.
 
 ## Status
 
@@ -362,7 +363,7 @@ If you use sealedge in a paper, please cite it as:
 ```bibtex
 @software{sealedge,
   author = {Winarto, Hansen},
-  title = {sealedge: Honest backtesting toolkit for quantitative trading strategies with sealed holdout discipline},
+  title = {sealedge: Sealed-holdout backtesting toolkit for quantitative trading strategies},
   version = {0.5.1},
   year = {2026},
   url = {https://github.com/Hansiongs/sealedge},
@@ -375,7 +376,7 @@ citation generation.
 
 ## License
 
-GPL-3.0-or-later — see [LICENSE](LICENSE).
+GPL-3.0-or-later, see [LICENSE](LICENSE).
 
 ## Contributing
 

@@ -1,16 +1,17 @@
 # sealedge -- replication materials (Phase 2)
 
-This directory contains the **replication materials** for the sealedge JSS
-submission. Reviewers should be able to reproduce all paper-claim results
-by running **one command**.
+Replication materials for the sealedge JSS paper. Reviewers should be
+able to reproduce the paper-claim numbers with one command.
 
 ## Contents
 
 | File | Purpose |
 |------|---------|
-| `scripts/reproduce.py` | Single canonical reproduction script. Runs all 3 strategies with paper-grade `n_spa_iters=2000`. |
-| `output/` | Default output directory for new runs (`results.json` + `results.md`). Gitignored. |
-| `output_paper_grade/` | Committed sample from a paper-grade run (seed 42, `n_spa_iters=2000`) for cross-check. |
+| `scripts/reproduce.py` | SPA explore reproduction. Runs all 3 strategies with paper-grade `n_spa_iters=2000`. |
+| `scripts/reproduce_seal_demo.py` | Claim 1 micro-demo: synthetic HMAC seal → verify → tamper fail → one-shot break (seconds; no market data). |
+| `output/` | Default output directory for new SPA runs (`results.json` + `results.md`). Gitignored. |
+| `output_paper_grade/` | Committed SPA explore sample (seed 42, `n_spa_iters=2000`) for cross-check. |
+| `output_seal_demo/` | Committed seal micro-demo sample (`results.json` + `results.md`). |
 | `README.md` | This file. |
 
 ## Quick start
@@ -19,22 +20,29 @@ by running **one command**.
 # Full paper-grade reproduction (~1 h class on a typical PC; ~53 min measured on Windows AMD64)
 python scripts/reproduce.py
 
-# Smoke-test single strategy first (same n_spa_iters=2000; often ~6–35 min depending on strategy)
+# Smoke-test single strategy first (same n_spa_iters=2000; often ~6, 35 min depending on strategy)
 python scripts/reproduce.py --strategies vol_compression_v1
 
 # Or via Makefile
 make reproduce          # all 3 strategies, n_spa_iters=2000
 make reproduce-one EXP=vol_compression_v1   # single strategy smoke test
+make reproduce-seal     # Claim 1 synthetic seal micro-demo (~seconds)
 ```
 
-Each run writes (default `--output-dir replication/output`):
+SPA explore runs write (default `--output-dir replication/output`):
 
 * `results.json` -- per-strategy metrics, platform metadata, git
   commit, seed values, dependency versions
 * `results.md` -- human-readable summary table for reviewer
   cross-check
 
-Committed reference sample: `replication/output_paper_grade/`.
+Committed SPA reference sample: `replication/output_paper_grade/`.
+Table SPA column is Hansen-path `spa_p_value`. In that sample,
+`spa_naive_p_value` is `NaN` for all three strategies (legacy anchor-span
+guard ≥80% of calendar) — intentional sentinel, not a failed run.
+
+Seal micro-demo (Claim 1) writes `replication/output_seal_demo/` and does
+**not** open registered-experiment holdouts or touch `data_cache/`.
 
 ## Runtime expectations
 
@@ -49,7 +57,7 @@ see `output_paper_grade/results.json`):
 | Full pipeline | all 3 | **~53 min** |
 
 Slower hardware or cold Numba caches can push the full pipeline toward
-~1–2 h. There is **no** reduced-`n_spa_iters` fast script: smoke tests
+~1, 2 h. There is **no** reduced-`n_spa_iters` fast script: smoke tests
 use the same SPA precision on fewer strategies. JSS “about one hour on
 a regular PC” is met on the measured box; document machine class in the
 manuscript if your machine differs.
@@ -116,28 +124,32 @@ volume lookback** ending at `train_start`, so the cache must start
 **Workarounds** if you cannot pre-cache early history:
 - Ensure cache covers at least ~90 days before `2021-07-01` for each symbol
 - Only as last resort: change `train_start` in `quant_lib/experiments/*.py`
-  (that diverges from the paper sample — prefer fixing the cache)
+  (that diverges from the paper sample, prefer fixing the cache)
 
-## What the script does NOT do
+## What the SPA script does NOT do
 
-* **Holdout commit** -- the script runs `run_explore` only. The
-  holdout seal is preserved for the full paper submission. To verify
-  holdout performance, use `python -m quant_lib run_commit <strategy>`
-  separately (this irreversibly breaks the seal).
-* **Plot generation** -- the paper's figures will be generated
-  separately in Phase 3 (manuscript drafting). All numeric metrics
-  needed for figures are captured in `results.json`.
+* **Holdout commit on registered experiments** -- `reproduce.py` runs
+  `run_explore` only. Registered-experiment seals stay closed. Full
+  strategy commit is `run_commit` (irreversible); do not use that path
+  for paper-grade SPA cross-check.
+* **Claim 1 seal proof** -- use `python scripts/reproduce_seal_demo.py`
+  (or `make reproduce-seal`) for synthetic seal/verify/tamper/break.
+* **Plot generation** -- numeric metrics for tables live in
+  `results.json`; figures are optional for reviewers.
 
 ## Reviewer checklist
 
 1. Install dependencies: `pip install -e ".[dev]"`
-2. Pre-cache data (see "Data prerequisites" above)
-3. Set `QUANT_LIB_HMAC_SECRET` (or let the script auto-set it)
-4. Run `python scripts/reproduce.py`
-5. Verify `output/results.json` shows all 3 strategies with `status: success`
-6. Verify `output/results.md` matches the paper's Table X
+2. Pre-cache data (see "Data prerequisites" above) — SPA path only
+3. Set `QUANT_LIB_HMAC_SECRET` (or let scripts auto-set a demo secret)
+4. Run `python scripts/reproduce_seal_demo.py` and confirm
+   `output_seal_demo/results.json` has `"ok": true` (all steps pass)
+5. Run `python scripts/reproduce.py`
+6. Verify `output/results.json` shows all 3 strategies with `status: success`
+7. Cross-check SPA table cells against `output_paper_grade/` (Hansen
+   `spa_p_value`; legacy naive may be NaN under the span guard)
 
-If any strategy fails, the script exits with code 2 (after writing
+If any SPA strategy fails, the script exits with code 2 (after writing
 partial output). Inspect `results.json` for the per-strategy error
 message.
 
