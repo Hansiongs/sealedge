@@ -7,6 +7,8 @@
 \usepackage{orcidlink,thumbpdf,lmodern}
 \usepackage{booktabs}
 \usepackage{tabularx}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,calc}
 
 \newcommand{\class}[1]{`\code{#1}'}
 \newcommand{\fct}[1]{\code{#1()}}
@@ -27,7 +29,6 @@
 %% -- metainformation ---------------------------------------------------------
 \author{
   Hansen Winarto\\
-  Information Systems Department, BINUS Online Learning\\
   Bina Nusantara University
 }
 \Plainauthor{Hansen Winarto}
@@ -328,20 +329,37 @@ experiments/  -> cli/  -> research/ -> audit/  -> tools/ -> core/  -> utils/
 
 \begin{figure}[t!]
 \centering
-\begin{Code}
-registered experiment (period, universe, hypothesis)
-  -> ResearchSession          # HMAC seal created/loaded; closed
-  -> Candidate stages
-       hypothesis -> universe -> edge (WFA + dual-null SPA)
-       -> narrowed / mark_ready()
-  -> ExploreResult            # run_explore stops here (seal closed)
-  -> run_commit               # re-verify, one-shot break (optional)
-  -> CommitResult             # holdout PSR / equity (not in SPA sample)
-\end{Code}
+\begin{tikzpicture}[
+  font=\footnotesize\sffamily,
+  box/.style={draw, rounded corners=1.5pt, align=center,
+    inner sep=4pt, minimum height=0.85cm, minimum width=2.55cm},
+  arr/.style={-{Latex[length=1.6mm]}, thick},
+  note/.style={font=\scriptsize\sffamily, text=black!70}
+]
+  \node[box, fill=black!4] (exp) {Registered\\experiment};
+  \node[box, right=0.45cm of exp, fill=black!4] (sess) {ResearchSession\\HMAC seal closed};
+  \node[box, right=0.45cm of sess, fill=black!4] (cand) {Candidate\\stages};
+  \node[box, below=0.7cm of cand, fill=black!3, minimum width=3.4cm] (edge)
+    {hypothesis $\to$ universe\\$\to$ edge (WFA + SPA)};
+  \node[box, left=0.45cm of edge, fill=black!6] (er) {ExploreResult\\seal still closed};
+  \node[box, left=0.45cm of er, fill=black!8] (cr) {CommitResult\\holdout PSR};
+  \node[box, above=0.55cm of cr, fill=black!5] (rc) {\texttt{run\_commit}\\(optional)};
+
+  \draw[arr] (exp) -- (sess);
+  \draw[arr] (sess) -- (cand);
+  \draw[arr] (cand) -- (edge);
+  \draw[arr] (edge) -- (er);
+  \draw[arr] (er) -- (rc);
+  \draw[arr] (rc) -- (cr);
+
+  \node[note, below=0.12cm of er] {\texttt{run\_explore} (paper SPA path)};
+  \node[note, below=0.12cm of cr] {not in SPA sample};
+\end{tikzpicture}
 \caption{Public explore/commit workflow.  Paper SPA tables use
   \fct{run\_explore} only.  Claim~1 seal lifecycle is checked by the
-  synthetic micro-demo in Section~\ref{sec:compute}, not by opening
-  registered-experiment holdouts.}
+  synthetic micro-demo (Figure~\ref{fig:seal}) and
+  Section~\ref{sec:compute}, not by opening registered-experiment
+  holdouts.}
 \label{fig:workflow}
 \end{figure}
 
@@ -456,6 +474,37 @@ OHLCV and any feature inputs that can change signals must not be silently
 rewritten between session creation and final scoring, and the default
 exploratory path must not score the reserved window at all.  The package
 authenticates seal records with HMAC-SHA256 \citep{Krawczyk+etal:1997}.
+
+\begin{figure}[t!]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize\sffamily,
+  snode/.style={draw, rounded corners=1.5pt, align=center,
+    inner sep=4pt, minimum height=0.9cm, minimum width=2.15cm,
+    fill=black!4},
+  arr/.style={-{Latex[length=1.6mm]}, thick},
+  fail/.style={draw, rounded corners=1.5pt, align=center,
+    inner sep=3pt, minimum height=0.75cm, fill=black!8}
+]
+  \node[snode] (s1) {Seal\\record};
+  \node[snode, right=0.4cm of s1] (s2) {Verify\\OK};
+  \node[snode, right=0.4cm of s2] (s3) {Tamper\\on disk};
+  \node[fail, right=0.4cm of s3] (s4) {Verify\\fails};
+  \node[snode, below=0.65cm of s2] (s5) {Fresh seal\\+ break once};
+  \node[fail, right=0.4cm of s5] (s6) {Second break\\rejected};
+
+  \draw[arr] (s1) -- (s2);
+  \draw[arr] (s2) -- (s3);
+  \draw[arr] (s3) -- (s4);
+  \draw[arr] (s2) -- (s5);
+  \draw[arr] (s5) -- (s6);
+\end{tikzpicture}
+\caption{Synthetic Claim~1 micro-demo path
+  (\code{scripts/reproduce\_seal\_demo.py}).  The demo uses a temporary
+  seal file and fixed digest; it does not open registered-experiment
+  holdouts or touch \code{data\_cache/}.}
+\label{fig:seal}
+\end{figure}
 
 On \code{ResearchSession} construction the package loads holdout-range inputs
 from the data cache and computes a SHA256 digest.  The hasher lives at
@@ -604,6 +653,40 @@ daily close and high/low matrices, portfolio risk knobs, and iteration budget
 $B$ (\code{n\_iters}; paper default $B=2000$ via \fct{run\_explore}).  Two null
 constructions coexist.  The public edge path evaluates both and stores both
 $p$-values.
+
+\begin{figure}[t!]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize\sffamily,
+  box/.style={draw, rounded corners=1.5pt, align=center,
+    inner sep=4pt, minimum height=0.95cm, minimum width=3.1cm,
+    fill=black!4},
+  arr/.style={-{Latex[length=1.6mm]}, thick},
+  note/.style={font=\scriptsize\sffamily, text=black!70, align=center}
+]
+  \node[box] (in) {OOS trades +\\WFA \texttt{trial\_r\_nets}};
+  \node[box, below left=0.85cm and 0.15cm of in] (leg) {Legacy null\\time-anchored permute};
+  \node[box, below right=0.85cm and 0.15cm of in] (han) {Hansen-literal null\\block bootstrap};
+  \node[box, below=0.75cm of leg] (pn) {\texttt{spa\_naive\_p\_value}\\may be NaN};
+  \node[box, below=0.75cm of han, fill=black!7] (ph) {\texttt{spa\_p\_value}\\table column};
+
+  \draw[arr] (in) -- (leg);
+  \draw[arr] (in) -- (han);
+  \draw[arr] (leg) -- (pn);
+  \draw[arr] (han) -- (ph);
+  \draw[arr, dashed] (han) -- node[note, midway, right=0.05cm, xshift=0.35cm]
+    {fallback} (pn);
+
+  \node[note, below=0.15cm of pn]
+    {span guard $\ge 80\%$ $\Rightarrow$ NaN\\in paper sample};
+  \node[note, below=0.15cm of ph]
+    {explore default; Table~\ref{tab:spa}};
+\end{tikzpicture}
+\caption{Dual-null SPA wiring on the explore path.  Both $p$-values are
+  stored; Table~\ref{tab:spa} reports Hansen-path \code{spa\_p\_value}.
+  Legacy NaN under the anchor-span guard is intentional, not a failed run.}
+\label{fig:spa-dual}
+\end{figure}
 
 \paragraph{Legacy null (always computed).}
 The legacy null preserves cross-asset co-occurrence by time-anchored circular
