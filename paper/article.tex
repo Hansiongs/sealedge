@@ -895,7 +895,7 @@ The four primary claims do not exhaust the statistical surface of \pkg{quant\_li
 
 \label{sssec:mt-journal}
 
-\paragraph{Bonferroni context and the experiment journal.}  Multiplicity across an entire research program is the count of registered experiments that have been pushed through the machine, not the row count of one Table.  The \code{ExperimentJournal} class in \code{quant\_lib/audit/journal.py} threads a registry counter across every \code{run\_explore} / \code{run\_commit} call: \code{log\_run(description, category, params\_snapshot)} appends a structured entry and \code{n\_tests} returns a credit-weighted count
+\paragraph{Bonferroni context and the experiment journal.}  Multiplicity across an entire research program is the count of registered experiments that have been pushed through the machine, not the row count of one Table.  The \code{ExperimentLog} class in \code{quant\_lib/audit/journal.py} threads a registry counter across every \code{run\_explore} / \code{run\_commit} call: \code{log\_run(description, category, params\_snapshot)} appends a structured entry and \code{n\_tests} returns a credit-weighted count
 \[
   n_{\mathrm{tests}} = n_{\mathrm{experiments}} + 0.5 \cdot n_{\mathrm{ablations}},
 \]
@@ -1103,6 +1103,9 @@ tests select fewer strategies at the same SPA precision
 Global seed is 42.  The committed cross-check sample under the
 \code{replication/} tree records package version \code{0.5.1}, capture time,
 git commit, per-strategy metrics, and wall times on Windows AMD64
+(\code{elapsed\_seconds} per strategy lives beside explore metrics; the
+global seed, \code{n\_spa\_iters}, and dependency versions sit at the
+top-level \code{metadata} block of \code{results.json})
 (Python~3.14.4); the directory name is \code{output\_paper\_grade}.  Measured
 times for that sample were approximately 53 minutes for all three strategies
 (pullback $\sim$6~min, volatility compression $\sim$12~min, funding-rate carry
