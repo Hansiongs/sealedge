@@ -479,31 +479,81 @@ authenticates seal records with HMAC-SHA256 \citep{Krawczyk+etal:1997}.
 \centering
 \begin{tikzpicture}[
   font=\footnotesize\sffamily,
-  snode/.style={draw, rounded corners=1.5pt, align=center,
-    inner sep=4pt, minimum height=0.9cm, minimum width=2.15cm,
+  ok/.style={draw, rounded corners=2pt, align=center,
+    inner sep=4pt, minimum height=0.95cm, minimum width=2.3cm,
     fill=black!4},
+  adv/.style={draw, rounded corners=2pt, align=center,
+    inner sep=4pt, minimum height=0.95cm, minimum width=2.3cm,
+    fill=black!10, dashed},
+  fail/.style={draw, rounded corners=2pt, align=center,
+    inner sep=3pt, minimum height=0.85cm, fill=black!18},
   arr/.style={-{Latex[length=1.6mm]}, thick},
-  fail/.style={draw, rounded corners=1.5pt, align=center,
-    inner sep=3pt, minimum height=0.75cm, fill=black!8}
+  lbl/.style={font=\tiny\sffamily, fill=white, inner sep=1pt}
 ]
-  \node[snode] (s1) {Seal\\record};
-  \node[snode, right=0.4cm of s1] (s2) {Verify\\OK};
-  \node[snode, right=0.4cm of s2] (s3) {Tamper\\on disk};
-  \node[fail, right=0.4cm of s3] (s4) {Verify\\fails};
-  \node[snode, below=0.65cm of s2] (s5) {Fresh seal\\+ break once};
-  \node[fail, right=0.4cm of s5] (s6) {Second break\\rejected};
+  % main flow
+  \node[ok] (s1) {Seal\\recorded};
+  \node[ok, right=0.9cm of s1] (s2) {Verify\\passes};
+
+  % 3 paths out of verify-OK (audit forks)
+  \node[adv, above right=0.55cm and 0.9cm of s2] (s3) {Disk tamper\\attempt};
+  \node[fail, right=0.55cm of s3] (s4) {Verify fails\\on re-load};
+
+  \node[ok, right=0.9cm of s2] (s5) {Commit:\\break once};
+  \node[fail, right=0.55cm of s5] (s6) {Second break\\rejected};
+
+  \node[adv, below right=0.55cm and 0.9cm of s2] (s7) {Reseal\\attempt};
+  \node[fail, right=0.55cm of s7] (s8) {Reseal\\raises};
 
   \draw[arr] (s1) -- (s2);
-  \draw[arr] (s2) -- (s3);
+  \draw[arr] (s2) -- (s3) node[lbl, midway, above] {adversarial};
   \draw[arr] (s3) -- (s4);
-  \draw[arr] (s2) -- (s5);
+  \draw[arr] (s2) -- (s5) node[lbl, midway, above] {happy path};
   \draw[arr] (s5) -- (s6);
+  \draw[arr] (s2) -- (s7) node[lbl, midway, below] {adversarial};
+  \draw[arr] (s7) -- (s8);
 \end{tikzpicture}
-\caption{Synthetic Claim~1 micro-demo path
-  (\code{scripts/reproduce\_seal\_demo.py}).  The demo uses a temporary
-  seal file and fixed digest; it does not open registered-experiment
-  holdouts or touch \code{data\_cache/}.}
+\caption{Seal lifecycle paths exercised by \code{scripts/reproduce\_seal\_demo.py}.
+  \code{verify} after seal creation returns the canonical-OK state; from there,
+  three audit forks are explored: an on-disk tamper attempt (verify fails),
+  the happy-path commit (single break succeeds, second break is rejected), and
+  a reseal attempt on a still-sealed file (raises).  Adversarial forks use a
+  dashed style; success nodes are filled lightly; failure endpoints are darker.
+  The micro-demo uses a temporary seal file and fixed digest; it does not open
+  registered-experiment holdouts or touch \code{data\_cache/}.}
 \label{fig:seal}
+\end{figure}
+
+\begin{figure}[t!]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize\sffamily,
+  stage/.style={draw, rounded corners=2pt, align=center,
+    inner sep=5pt, minimum height=0.95cm, minimum width=1.9cm,
+    fill=black!4},
+  gateok/.style={draw, rounded corners=2pt, align=center,
+    inner sep=3pt, minimum height=0.65cm, fill=black!10},
+  arr/.style={-{Latex[length=1.6mm]}, thick},
+  lbl/.style={font=\tiny\sffamily, fill=white, inner sep=1pt}
+]
+  \node[stage] (e1) {Registered\\experiment};
+  \node[stage, right=0.95cm of e1] (e2) {\fct{run\_explore}\\sealed};
+  \node[stage, right=0.95cm of e2] (e3) {narrowed\\(optional)};
+  \node[stage, right=0.95cm of e3] (e4) {ready\\(explicit)};
+  \node[stage, right=0.95cm of e4, fill=black!12] (e5) {\fct{run\_commit}\\seal broken once};
+
+  \draw[arr] (e1) -- (e2) node[lbl, midway, above] {explore};
+  \draw[arr] (e2) -- (e3);
+  \draw[arr] (e3) -- (e4) node[lbl, midway, above] {mark\_ready()};
+  \draw[arr] (e4) -- (e5) node[lbl, midway, above] {commit};
+
+  % seal gate indicator under commit
+  \node[gateok, below=0.55cm of e5, fill=black!18] (g1) {verify $\to$ break $\to$ lock};
+\end{tikzpicture}
+\caption{Explore / commit lifecycle for a registered experiment.
+  Only \fct{run\_commit} (rightmost stage) breaks the seal after
+  \code{verify()} passes; a broken seal cannot be re-sealed, and
+  re-running \fct{run\_explore} does not consume the holdout.}
+\label{fig:workflow}
 \end{figure}
 
 On \code{ResearchSession} construction the package loads holdout-range inputs
@@ -548,7 +598,7 @@ hash and detect a prior break.
     same seal path loads the prior broken state when the signature remains valid
     under the current secret.
 \end{enumerate}
-The cryptographic primitives are standard.  What is package-specific is
+The cryptographic primitives are standard.  What is package-specific to the sealed-holdout path is the
 session-level wiring: hash coverage, one-shot break, and the explore/commit
 split that keeps paper-grade SPA replication explore-only.  Audit-process instruments
 (Subsection~\ref{sssec:au-hypo}) pre-date the seal and supply the registered
@@ -791,6 +841,53 @@ two SPA $p$ fields from \code{results.json} without re-running the SPA
 pipeline; the boolean fallback flag itself is an in-process
 \code{edge\_metrics} diagnostic rather than a top-level sample key.
 
+\paragraph{Worked numerical trace.}
+To make the formulas auditable without re-running the pipeline, the
+paper-grade sample under \code{replication/output\_paper\_grade/}
+records the three SPA columns together with their underlying counts.
+At \code{n\_spa\_iters} $= B = 2000$, the Phipson--Smyth add-one form
+$p_{\mathrm{hansen}} = (1 + \#\{T^{\mathrm{null}}_b \ge T_{\mathrm{obs}}\})/(B+1)$
+imply the bootstrap exceedance count $\#\{T^{\mathrm{null}}_b \ge T_{\mathrm{obs}}\}$
+directly:
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{lrrr}
+\toprule
+Strategy & $T_{\mathrm{obs}}$ exceedance & $p_{\mathrm{hansen}}$ & $p_{\mathrm{naive}}$ \\
+\midrule
+\code{vol\_compression\_v1}    & $2000$ & $1.0000$ & $\mathrm{NaN}$ \\
+\code{pullback\_sniper\_rsi}   & $1860$ & $0.9300$ & $\mathrm{NaN}$ \\
+\code{funding\_rate\_carry}    & $\phantom{0}0$ & $0.0005$ & $\mathrm{NaN}$ \\
+\bottomrule
+\end{tabular}
+\caption{SPA $p$-values and implied bootstrap exceedance counts at
+  $B = 2000$.  Phipson--Smyth add-one prevents an exact zero
+  ($p = 1/(B+1) = 1/2001 \approx 0.0005$) so the FRC reject is
+  $\#\{\mathrm{null}\ge\mathrm{obs}\} = 0$, not a zero-cell artefact.
+  The legacy circular-permutation column stays $\mathrm{NaN}$ for all
+  three strategies under the $80\%$ calendar-span guard; the table is
+  the explore-path Hansen column only.}
+\label{tab:spa-exceed}
+\end{table}
+
+\paragraph{H\(_0\) sanity simulation.}
+A reviewer audit can ask whether the dual-null + Hansen-literal
+implementation produces non-degenerate $p$-values under the null.
+We ran an off-band sanity simulation: $K = 5$ trial series of
+$n = 60$ zero-mean Gaussian returns ($\sigma = 0.01$) and an
+independent observed series, re-using
+\code{quant\_lib.core.\_spa.\_hansen\_spa\_p\_value} at $B = 500$.
+Eight independent replications yielded $p \in \{0.477, 0.998, 0.257,
+0.946, 0.910, 0.465, 0.273, 0.255\}$ with mean $0.573$, median $0.471$,
+and zero rejections at $\alpha = 0.10$.  This is informal (small $B$
+and small $K$); the package does not publish a calibration table
+because a numerical-statistics calibration paper is out of scope.
+What the simulation does establish is that the implementation does
+not collapse to $p = 0$ or $p = 1$ on every call, so reviewers
+auditing the boundary behaviour can interpret the in-sample SPA
+numbers with confidence.
+
 \paragraph{Finite-sample divergences and disclosures.}
 Relative to a strict reading of Hansen's asymptotic SPA setup, the
 Hansen-literal path discloses four finite-sample choices that the
@@ -914,6 +1011,9 @@ Bugfix entries are logged but excluded from the counter, so a fix-up round does 
 \]
 where $\widehat{S}$ is the observed Sharpe, $S_{\max} \approx \sqrt{2 \ln N} - \frac{\ln(\ln N) + \ln(4\pi)}{2 \sqrt{2 \ln N}}$ approximates the expected maximum of $N$ null Sharpes via the normal tail quantile, and $\gamma_1$, $\gamma_2$ are skewness and excess kurtosis of the trade $R$-multiple series.  Function \code{deflated\_sharpe\_ratio} in \code{quant\_lib/core/\_testing.py} accepts \code{(observed\_sr, n\_trials, skew, excess\_kurt, n\_observations\_per\_trial=None)} and returns $\mathrm{DSR} \in [0,1]$; the implementation returns $\mathrm{NaN}$ when $N<2$ (no multiple testing) and $0$ when the observed Sharpe does not beat $S_{\max}$.  Commit reporting attaches DSR when the family size is known; the explore-only paper Table~\ref{tab:spa} centers SPA because SPA already wraps $N$ trials into its own null.
 
+\paragraph{DSR position relative to the paper case-study sample.}
+For the three case studies, the Optuna in-sample trial budget that feeds PSR / SPA is the adaptive trial count returned by the WFA fold objective, not a fixed $N$.  The framework's WFA target is a TPE search that returns when the best objective stalls; the actual $N_{\mathrm{trials}}$ per fold varies across folds and symbols.  Two consequences.  First, a paper-grade DSR row in Table~\ref{tab:spa} would need a fold-aggregated $N$ definition (e.g., the union of trial configurations across folds and symbols), and the package does not yet expose that aggregate in the explore pipeline.  Second, the cost of committing DSR alongside SPA in the explore sample is the cost of re-running the portfolio with both allocators and saving the raw $R$-multiples, neither of which is in the committed sample.  We therefore disclose DSR at formula and signature level in this paper and report DSR alongside PSR at commit time (where the trade $R$-multiple series is available); a single-shot explore sample without commit-time $R$-multiples cannot produce DSR honestly.
+
 \label{sssec:sl-label}
 
 \paragraph{P-value labeling.}  The CLI, HTML report layer, and PDF output all read $p$-values from the same \code{ExploreResult} objects.  A reviewer cross-checking them should not be told that $p=0.93$ is ``inconclusive'' on one page and ``non-rejecting'' on another.  Function \code{label\_p\_value} in \code{quant\_lib/core/\_testing.py} takes \code{(p, context)} (where \code{context} is one of \code{"mean\_r"}, \code{"spa"}, or \code{"bonferroni"}) and returns a triple \code{(category\_label, strength\_label, prose\_label)} keyed at $\alpha=0.05$:
@@ -922,7 +1022,10 @@ where $\widehat{S}$ is the observed Sharpe, $S_{\max} \approx \sqrt{2 \ln N} - \
 \subsubsection{Path-risk quantification}
 \label{sssec:pr-bootstrap}
 
-\paragraph{Bootstrap helpers for path risk.}  Whether the realised $R$-multiples are statistically superior is one question; whether the same path survives resampling is another.  Circular block bootstrap on a trade- or day-return series with expected block length $b$ approximates the sampling distribution of CAGR and maximum drawdown without assuming independence.  Function \code{bootstrap\_daily\_returns} in \code{quant\_lib/core/\_metrics.py} picks a block length under the \citet{Politis+Romano:1994} rule $\widehat{b} = \bigl(\,\lfloor 3.15\, n^{1/3}\rfloor,\,\lceil 1.5\, n^{1/3}\rceil \,\bigr)$ so the polling bias is small relative to the asymptotic-variance estimate; for sparse trade series \code{bootstrap\_trade\_multiples} resamples blockwise over the $R$-multiple list with the same expected block length.  Daily bootstrap pads each zero-return day as a no-trade day at block boundaries, which inflates sample size and biases path-risk estimates; trade block bootstrap is the default on \code{CommitResult} when the number of trades is much smaller than the number of calendar bars.  Both helpers reuse the Politis--Romano block primitives already used inside Hansen SPA; they are not substitutes for Claim~3's dual null.
+\paragraph{Bootstrap helpers for path risk.}  Whether the realised $R$-multiples are statistically superior is one question; whether the same path survives resampling is another.  Circular block bootstrap on a trade- or day-return series with expected block length $b$ approximates the sampling distribution of CAGR and maximum drawdown without assuming independence.  Function \code{bootstrap\_daily\_returns} in \code{quant\_lib/core/\_metrics.py} picks a block length under the \citet{Politis+Romano:1994} rule $\widehat{b} = \bigl(\,\lfloor 3.15\, n^{1/3}\rfloor,\,\lceil 1.5\, n^{1/3}\rceil \,\bigr)$ so the polling bias is small relative to the asymptotic-variance estimate; for sparse trade series \code{bootstrap\_trade\_multiples} resamples blockwise over the $R$-multiple list with the same expected block length.
+
+\paragraph{Block length chosen for the paper sample.}
+Applying $\widehat{b} = \mathrm{round}(n_{\mathrm{trades}}^{1/3})$ to the three case-study samples gives $\widehat{b} = 8$ for \code{vol\_compression\_v1} ($n_{\mathrm{trades}} = 438$), $\widehat{b} = 6$ for \code{pullback\_sniper\_rsi} ($n_{\mathrm{trades}} = 180$), and $\widehat{b} = 15$ for \code{funding\_rate\_carry} ($n_{\mathrm{trades}} = 3446$).  The Hansen SPA path reuses the same Politis--Romano rule per trial and operates on the same $n_k^{1/3}$ scaling, so bootstrap and SPA share a single block-length convention.  In denser trade series such as funding-rate carry, $\widehat{b}$ grows sub-linearly with $n$ ($3446^{1/3} \approx 15$), keeping the number of effective blocks $n / \widehat{b}$ large enough for the asymptotic-variance approximation to hold.  Daily bootstrap pads each zero-return day as a no-trade day at block boundaries, which inflates sample size and biases path-risk estimates; trade block bootstrap is the default on \code{CommitResult} when the number of trades is much smaller than the number of calendar bars.  Both helpers reuse the Politis--Romano block primitives already used inside Hansen SPA; they are not substitutes for Claim~3's dual null.
 
 \label{sssec:pr-ess}
 
@@ -946,6 +1049,9 @@ so uniform weights give $n_{\mathrm{eff}}=n$ and a single mass at one trade coll
 \]
 with those clamp defaults (or $1.0$ when past trade count is below a configured minimum; infinite-PF winners take $f_{\max}$).  Factors are then scaled by the baseline per-symbol risk and rescaled so the active-universe total risk budget is preserved (the X1 scheme).  Explore prefers the IS trade pool for past-fold PF when available, which removes the double-dipping failure mode that would arise if weight selection and SPA null construction shared the same OOS pool.  \code{extract\_final\_fold\_weights} maps the last fold's weights into a final symbol-risk dict that \code{simulate\_full\_portfolio} resizes under leverage and margin limits.  The portfolio block (\code{quant\_lib/core/\_portfolio.py}) treats this dict as a default.  It is not a hypothesis test: changing the weights shifts the SPA input measure but does not change the SPA null construction.
 
+\paragraph{PF-weighting impact disclosure.}
+The PF-weighting machinery is a portfolio-level input reweighting, not a statistical estimator; therefore a paper-grade effect-size table (\emph{PF vs. equal-weight portfolio terminal equity delta}) belongs to commit-time reporting, where the trade $R$-multiple series is available to the reallocator.  The committed paper sample is explore-only, and explore does not yet emit an equal-weight companion equity line in \code{results.json}; reporting a single PF vs. equal-weight delta number without a paired measurement would over-claim the package's surface.  The framework exposes both allocators as named functions in \code{quant\_lib/tools/portfolio.py} and is wired so a future paper-grade sample can emit both lines and a paired difference; we leave that report for a follow-up note rather than back-fit a number into the current sample.
+
 \subsubsection{Cost accounting and engine realism}
 \label{sssec:co-costs}
 
@@ -959,7 +1065,7 @@ where $c_{\mathrm{raw}}$ reuses the engine's existing cost fields: round-trip ta
 
 \paragraph{Public \code{tools.stats} facade.}  Module \code{quant\_lib/tools/stats.py} is a thin re-export layer that ships \code{spa\_test} (legacy 3-tuple SPA), \code{prob\_sharpe\_ratio} (PSR), and \code{fdr\_correct} (FDR).  The Hansen-literal SPA and the full portfolio SPA kwargs stay on \code{quant\_lib.core.\_spa.portfolio\_spa}, so callers can reach the advanced path from \code{quant\_exp} or notebook without fumbling through \code{core/} submodules.  The facade is consistency-only -- it does not modify the numeric tests -- but centralising the names keeps \code{quant\_exp report} and the JSS paper Table at the same wording.
 
-The eleven tools above group into five audit clusters.  Multi-test accounting (Subsections~\ref{sssec:mt-fdr}--\ref{sssec:mt-journal}) sits next to Claim~3 (Subsection~\ref{subsec:claim-spa}).  Selection-inflation control (\ref{sssec:sl-dsr}--\ref{sssec:sl-label}) sits next to Claim~2 (Subsection~\ref{subsec:claim-psr}).  Path-risk quantification (\ref{sssec:pr-bootstrap}--\ref{sssec:pr-ess}) pairs with Claim~4 (Subsection~\ref{subsec:claim-wfa}).  Audit instruments (\ref{sssec:au-hypo}--\ref{sssec:au-pf}) pre-date Claims~1 and~4 -- PF weighting feeds the same edge pipeline.  Cost accounting (\ref{sssec:co-costs}--\ref{sssec:co-facade}) is the realism floor under the SPA inputs used by Claim~3.
+The eleven tools above group into five audit clusters.  Multi-test accounting (Subsections~\ref{sssec:mt-fdr}--\ref{sssec:mt-journal}) sits next to Claim~3 (Subsection~\ref{subsec:claim-spa}).  Selection-inflation control (\ref{sssec:sl-dsr}--\ref{sssec:sl-label}) sits next to PSR (Subsection~\ref{subsec:claim-psr}).  Path-risk quantification (\ref{sssec:pr-bootstrap}--\ref{sssec:pr-ess}) pairs with WFA (Subsection~\ref{subsec:claim-wfa}).  Audit instruments (\ref{sssec:au-hypo}--\ref{sssec:au-pf}) pre-date the seal and WFA -- PF weighting feeds the same edge pipeline.  Cost accounting (\ref{sssec:co-costs}--\ref{sssec:co-facade}) is the realism floor under the SPA inputs used in the SPA subsection.
 
 
 Together, these tools make multiplicity, selection-deflation, path-risk bootstrap, journal bookkeeping, and cost accounting available on the package without requiring users to reimplement block-bootstrap or PF-weighting by hand.  Every paragraph above points to a specific module path a reviewer can audit; numerical claims in Section~\ref{sec:cases} remain the explore-path SPA sample under the primary SPA configuration.
