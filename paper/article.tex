@@ -369,7 +369,9 @@ names, the explore/commit contract, and the SPA dual-null options so that
 reviewers do not have to reverse-engineer private core symbols.
 
 Registered experiments are listed from the shell or discovered as named
-callables.  Explore never opens the holdout:
+callables.  Explore never opens the holdout.  The public return type is
+\code{ExploreResult} (attribute access and dict-style keys share one
+field set):
 \begin{Code}
 # shell: quant_exp list
 # shell: quant_exp show vol_compression_v1
@@ -378,18 +380,21 @@ from quant_lib import run_explore
 result = run_explore(
     "vol_compression_v1",
     cache_dir="./data_cache",  # absolute path preferred
+    n_spa_iters=2000,          # paper-grade default
 )
-# common explore keys (sealed path):
-result["spa_p_value"]
-result["spa_naive_p_value"]  # legacy null when both available
-result["n_oos_trades"], result["n_executed"], result["n_rejected"]
-result["final_equity"]
+# ExploreResult fields (seal stays closed):
+result.spa_p_value            # Hansen-path explore p (table column)
+result.spa_naive_p_value      # legacy null; may be NaN (span guard)
+result.n_oos_trades, result.n_executed, result.n_rejected
+result.final_equity
+# equivalent: result["spa_p_value"], ...
 # shell: quant_exp explore vol_compression_v1
 # shell: quant_exp status   # seal still closed after explore
 \end{Code}
 The paper-grade replication script calls this explore surface only
-(Section~\ref{sec:compute}).  Metric keys above match the committed sample
-used in Section~\ref{sec:cases}.  Large SPA $p$-values are valid outputs.
+(Section~\ref{sec:compute}).  The keys above match the committed sample
+used in Section~\ref{sec:cases}.  Large SPA $p$-values are valid outputs;
+holdout PSR is not on this object.
 
 Holdout evaluation and commit-time diagnostics (including PSR on the
 committed path) use an explicit second step:
@@ -605,6 +610,11 @@ strategies under that anchor-span guard, while
 fallback to the legacy $p$ when Hansen cannot run).  Table~\ref{tab:spa}
 therefore reports Hansen-path \code{spa\_p\_value} only; a NaN legacy
 field is an intentional guard output, not a failed SPA run.
+Legacy $p$ is finite when the remapped trade anchor span is under the
+$80\%$ calendar threshold---typically shorter evaluation windows, lighter
+lookbacks, or denser bars relative to trade duration---so dual storage is
+not redundant outside this sample.  Explore defaults still treat
+Hansen-path \code{spa\_p\_value} as the primary reported column.
 
 
 \paragraph{Hansen-literal null (explore default).}
@@ -1003,12 +1013,17 @@ deposited on Zenodo with DOI
 \url{https://doi.org/10.5281/zenodo.21329428}.  Platform dependencies for
 reproduction include \code{numpy}, \code{pandas}, \code{scipy},
 \code{numba}, and \code{optuna} (see \code{replication/README.md}).  Seal
-operations require \code{QUANT\_LIB\_HMAC\_SECRET} (the reproduction script
-can auto-set a default for explore).  Large \code{data\_cache/} OHLCV files
-are external to the manuscript bundle: reviewers pre-cache
-\code{BTCUSDT}, \code{ETHUSDT}, and \code{SOLUSDT} 1h series with history
-before \code{train\_start = 2021-07-01} (universe filters need volume
-lookback and age).  The script does not fetch market data automatically.
+operations require \code{QUANT\_LIB\_HMAC\_SECRET}.  The reproduction script
+may auto-set a development default for explore-only runs; that default is
+not a production secret-management policy and should be replaced for any
+shared or long-lived deployment.  Large \code{data\_cache/} OHLCV files are
+external to the manuscript bundle: reviewers must pre-cache
+\code{BTCUSDT}, \code{ETHUSDT}, and \code{SOLUSDT} 1h bars (and funding
+series where the experiment needs them) with history before
+\code{train\_start = 2021-07-01}, including volume lookback and age floors
+used by universe filters.  \code{scripts/reproduce.py} fails pre-flight
+when required cache files or date coverage are missing; it does not fetch
+market data automatically.
 
 Linux fresh-install verification of the package test suite (including
 optional visualization extras for plotting tests) is documented in
