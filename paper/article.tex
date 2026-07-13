@@ -994,15 +994,21 @@ $\sim$36~min).  Cold Numba caches or slower hardware can push the full pipeline
 toward one to two hours. JSS-style ``about one hour on a regular PC'' is met
 on the measured box.
 
-Platform dependencies for reproduction include \code{numpy}, \code{pandas},
-\code{scipy}, \code{numba}, and \code{optuna} (see
-\code{replication/README.md}).  Seal operations require
-\code{QUANT\_LIB\_HMAC\_SECRET} (the reproduction script can auto-set a
-default for explore).  Large \code{data\_cache/} OHLCV files are external to
-the manuscript bundle: reviewers pre-cache \code{BTCUSDT}, \code{ETHUSDT},
-and \code{SOLUSDT} 1h series with history before \code{train\_start =
-2021-07-01} (universe filters need volume lookback and age).  The script does
-not fetch market data automatically.
+Install the public distribution from the Python Package Index as
+\code{pip install sealedge==0.5.1} (import path remains \pkg{quant\_lib}),
+or clone
+\url{https://github.com/Hansiongs/sealedge} at tag \code{v0.5.1} and install
+editable from the repository root.  A versioned archive of that tag is
+deposited on Zenodo with DOI
+\url{https://doi.org/10.5281/zenodo.21329428}.  Platform dependencies for
+reproduction include \code{numpy}, \code{pandas}, \code{scipy},
+\code{numba}, and \code{optuna} (see \code{replication/README.md}).  Seal
+operations require \code{QUANT\_LIB\_HMAC\_SECRET} (the reproduction script
+can auto-set a default for explore).  Large \code{data\_cache/} OHLCV files
+are external to the manuscript bundle: reviewers pre-cache
+\code{BTCUSDT}, \code{ETHUSDT}, and \code{SOLUSDT} 1h series with history
+before \code{train\_start = 2021-07-01} (universe filters need volume
+lookback and age).  The script does not fetch market data automatically.
 
 Linux fresh-install verification of the package test suite (including
 optional visualization extras for plotting tests) is documented in
