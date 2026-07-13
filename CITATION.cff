@@ -14,7 +14,8 @@ authors:
     email: "hansenwinarto@binus.ac.id"
     affiliation: "Information Systems Department, BINUS Online Learning, Bina Nusantara University"
 version: 0.5.1
-date-released: "2026-07-05"
+doi: 10.5281/zenodo.21329428
+date-released: "2026-07-13"
 license: GPL-3.0-or-later
 repository-code: "https://github.com/Hansiongs/sealedge"
 url: "https://github.com/Hansiongs/sealedge"
