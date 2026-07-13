@@ -326,6 +326,25 @@ experiments/  -> cli/  -> research/ -> audit/  -> tools/ -> core/  -> utils/
   \item \code{utils/}: shared primitives without pulling research state.
 \end{itemize}
 
+\begin{figure}[t!]
+\centering
+\begin{Code}
+registered experiment (period, universe, hypothesis)
+  -> ResearchSession          # HMAC seal created/loaded; closed
+  -> Candidate stages
+       hypothesis -> universe -> edge (WFA + dual-null SPA)
+       -> narrowed / mark_ready()
+  -> ExploreResult            # run_explore stops here (seal closed)
+  -> run_commit               # re-verify, one-shot break (optional)
+  -> CommitResult             # holdout PSR / equity (not in SPA sample)
+\end{Code}
+\caption{Public explore/commit workflow.  Paper SPA tables use
+  \fct{run\_explore} only.  Claim~1 seal lifecycle is checked by the
+  synthetic micro-demo in Section~\ref{sec:compute}, not by opening
+  registered-experiment holdouts.}
+\label{fig:workflow}
+\end{figure}
+
 A typical explore call constructs a \code{ResearchSession} (holdout seal
 created or loaded; explore may skip holdout feature materialization), builds a
 \code{Candidate} from the registered experiment, then runs stages in order:
@@ -347,7 +366,8 @@ scripts share one contract.
 Most reviewers and users touch three entry points: (i)~registered experiment
 names such as \code{vol\_compression\_v1}; (ii)~\fct{run\_explore} /
 \fct{run\_commit} from \pkg{quant\_lib}; (iii)~\code{quant\_exp} for the same
-flows from a shell.  The replication script calls the explore surface only.
+flows from a shell.  Figure~\ref{fig:workflow} summarizes the sealed path.
+The replication script calls the explore surface only.
 Lower layers remain importable for extension, but paper claims are stated
 against the public explore/commit contract, not against private core symbols.
 
@@ -360,7 +380,7 @@ use \pkg{quant\_lib} and \code{quant\_exp}.
 
 Formatted help for the library system is provided as NumPy-style docstrings
 on public modules and functions, browsable API pages under the repository
-\code{docs/} tree (built with \pkg{mkdocs}), and the narrative methodology
+\code{docs/} tree (built with \pkg{mkdocs}; \code{mkdocs build --strict}), and the narrative methodology
 write-up used by contributors.  After install, interactive help is available
 via the standard \proglang{Python} help system, e.g.\
 \code{help(quant\_lib.run\_explore)} and module-level
@@ -396,17 +416,21 @@ The paper-grade replication script calls this explore surface only
 used in Section~\ref{sec:cases}.  Large SPA $p$-values are valid outputs;
 holdout PSR is not on this object.
 
-Holdout evaluation and commit-time diagnostics (including PSR on the
-committed path) use an explicit second step:
+Holdout evaluation and commit-time diagnostics use an explicit second
+step.  The return type is \code{CommitResult} (fields include
+\code{psr}, \code{psr\_ess}, and holdout equity).  The call is irreversible
+on a live registered seal:
 \begin{Code}
 from quant_lib import run_commit
-# irreversible: re-verify HMAC inputs, then break the seal once
+# irreversible on a registered experiment seal:
 # commit = run_commit("vol_compression_v1", cache_dir="./data_cache")
-# commit.psr, commit.final_equity  # commit/reporting surface
+# commit.psr, commit.psr_ess, commit.final_equity
 \end{Code}
 Default manuscript replication does not execute \fct{run\_commit}, so
-reviewers can re-run explore without consuming the holdout.  A mismatch on
-re-hash at commit raises rather than silently scoring a tampered cache.
+reviewers can re-run explore without consuming the holdout.  Claim~1 on
+the paper path uses the synthetic seal micro-demo instead
+(Section~\ref{sec:compute}).  A mismatch on re-hash at commit raises
+rather than silently scoring a tampered cache.
 
 Private \code{core/} symbols are importable for extension but are outside
 the paper's public contract.  The software does not auto-fetch market data
@@ -416,11 +440,10 @@ replication script rather than inventing bars.
 %% -- 5 Core capabilities (software-innovation test) --------------------------
 \section[Core capabilities]{Core capabilities} \label{sec:capabilities}
 
-This section maps package statistical surfaces to concrete implementations in
+This section maps package statistical surfaces to implementations in
 \pkg{quant\_lib}.  Subsections~\ref{subsec:claim-seal}--\ref{subsec:claim-wfa}
-state the four primary claims in depth: established method, formal
-construction where it matters for reviewers, modules, defaults, and
-explore/commit wiring.  Subsection~\ref{subsec:additional-stats} covers
+cover the four primary claims (method, construction, modules, defaults,
+explore/commit wiring).  Subsection~\ref{subsec:additional-stats} covers
 supporting multiplicity, process, and risk tools at medium depth.
 
 \subsection{HMAC sealed holdout}
@@ -1007,10 +1030,13 @@ on the measured box.
 Install the public distribution from the Python Package Index as
 \code{pip install sealedge==0.5.1} (import path remains \pkg{quant\_lib}),
 or clone
-\url{https://github.com/Hansiongs/sealedge} at tag \code{v0.5.1} and install
-editable from the repository root.  A versioned archive of that tag is
-deposited on Zenodo with DOI
-\url{https://doi.org/10.5281/zenodo.21329428}.  Platform dependencies for
+\url{https://github.com/Hansiongs/sealedge} and install editable from the
+repository root.  Package release \code{0.5.1} is tagged \code{v0.5.1} and
+archived on Zenodo
+(\url{https://doi.org/10.5281/zenodo.21329428}).  The manuscript PDF, LaTeX
+sources under \code{paper/}, and replication docs track the git commit used
+for submission (tag \code{v0.5.2} when present; otherwise name the commit
+in the cover letter).  Platform dependencies for
 reproduction include \code{numpy}, \code{pandas}, \code{scipy},
 \code{numba}, and \code{optuna} (see \code{replication/README.md}).  Seal
 operations require \code{QUANT\_LIB\_HMAC\_SECRET}.  The reproduction script
