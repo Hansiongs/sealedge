@@ -327,42 +327,6 @@ experiments/  -> cli/  -> research/ -> audit/  -> tools/ -> core/  -> utils/
   \item \code{utils/}: shared primitives without pulling research state.
 \end{itemize}
 
-\begin{figure}[t!]
-\centering
-\begin{tikzpicture}[
-  font=\footnotesize\sffamily,
-  box/.style={draw, rounded corners=1.5pt, align=center,
-    inner sep=4pt, minimum height=0.85cm, minimum width=2.55cm},
-  arr/.style={-{Latex[length=1.6mm]}, thick},
-  note/.style={font=\scriptsize\sffamily, text=black!70}
-]
-  \node[box, fill=black!4] (exp) {Registered\\experiment};
-  \node[box, right=0.45cm of exp, fill=black!4] (sess) {ResearchSession\\HMAC seal closed};
-  \node[box, right=0.45cm of sess, fill=black!4] (cand) {Candidate\\stages};
-  \node[box, below=0.7cm of cand, fill=black!3, minimum width=3.4cm] (edge)
-    {hypothesis $\to$ universe\\$\to$ edge (WFA + SPA)};
-  \node[box, left=0.45cm of edge, fill=black!6] (er) {ExploreResult\\seal still closed};
-  \node[box, left=0.45cm of er, fill=black!8] (cr) {CommitResult\\holdout PSR};
-  \node[box, above=0.55cm of cr, fill=black!5] (rc) {\texttt{run\_commit}\\(optional)};
-
-  \draw[arr] (exp) -- (sess);
-  \draw[arr] (sess) -- (cand);
-  \draw[arr] (cand) -- (edge);
-  \draw[arr] (edge) -- (er);
-  \draw[arr] (er) -- (rc);
-  \draw[arr] (rc) -- (cr);
-
-  \node[note, below=0.12cm of er] {\texttt{run\_explore} (paper SPA path)};
-  \node[note, below=0.12cm of cr] {not in SPA sample};
-\end{tikzpicture}
-\caption{Public explore/commit workflow.  Paper SPA tables use
-  \fct{run\_explore} only.  Claim~1 seal lifecycle is checked by the
-  synthetic micro-demo (Figure~\ref{fig:seal}) and
-  Section~\ref{sec:compute}, not by opening registered-experiment
-  holdouts.}
-\label{fig:workflow}
-\end{figure}
-
 A typical explore call constructs a \code{ResearchSession} (holdout seal
 created or loaded; explore may skip holdout feature materialization), builds a
 \code{Candidate} from the registered experiment, then runs stages in order:
@@ -695,7 +659,7 @@ Monte Carlo $p$-values use the Phipson--Smyth add-one form
 \end{equation}
 so $p$ cannot be zero under random draws \citep{Phipson+Smyth:2010}.
 
-\paragraph{Shared entry point.}
+\paragraph{Shared entry point (Figure~\ref{fig:spa-dual}).}
 \code{portfolio\_spa} in \code{quant\_lib/core/\_spa.py} is the single SPA
 entry.  Callers pass observed out-of-sample trade dicts (including
 \code{r\_net}, times, symbol, and stop parameters), per-symbol asset panels,
@@ -1256,7 +1220,12 @@ the sample; the frozen JSS source snapshot at submission may differ and
 should be named in the cover materials.  Source and the importable package
 are distributed under the GNU General Public License, version~3 or later
 (GPL-3.0-or-later), matching the repository \code{LICENSE} and package
-metadata at version \code{0.5.1}.
+metadata at version \code{0.5.1}.  The manuscript describes the artifact
+frozen at PyPI version \code{0.5.1} (Zenodo DOI
+\url{https://doi.org/10.5281/zenodo.21329428}, GitHub tag \code{v0.5.1});
+the repository \code{main} branch continues maintenance post-publication
+with later minor versions, but the SPA table numbers, configuration, and
+empirical sample in this submission are bit-identical to \code{0.5.1}.
 
 %% -- 9 Summary ---------------------------------------------------------------
 \section[Summary]{Summary} \label{sec:summary}

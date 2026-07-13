@@ -79,3 +79,5 @@ results/
 
 # OJS submission bundles (build artifacts for the JSS submission)
 submission/
+# Author-specific OJS submission draft (not for review)
+OJS_COVER_DRAFT.md
