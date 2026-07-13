@@ -1023,7 +1023,12 @@ series where the experiment needs them) with history before
 \code{train\_start = 2021-07-01}, including volume lookback and age floors
 used by universe filters.  \code{scripts/reproduce.py} fails pre-flight
 when required cache files or date coverage are missing; it does not fetch
-market data automatically.
+market data automatically.  File names, minimum history relative to
+\code{train\_start = 2021-07-01}, funding masters for
+\code{funding\_rate\_carry}, and the public
+\code{quant\_lib.tools.data.fetch\_klines} /
+\code{fetch\_funding} helpers are documented in
+\code{replication/README.md} and \code{replication/data\_manifest.md}.
 
 Linux fresh-install verification of the package test suite (including
 optional visualization extras for plotting tests) is documented in

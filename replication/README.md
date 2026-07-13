@@ -93,38 +93,44 @@ Attach `pip_freeze.txt` to the JSS submission alongside the source code.
 
 ## Data prerequisites
 
-The reproduction script needs **`data_cache/BTCUSDT_1h_MASTER.csv`**
-and similar files for `ETHUSDT` and `SOLUSDT`. These CSVs are
-git-ignored (they're 10 MB total and reviewer machines may have
-incompatible network access).
+See also **`data_manifest.md`** (required filenames, coverage rules, optional
+local SHA snapshot).
 
-**The script does NOT fetch data automatically.** Pre-cache manually:
+Paper strategies need, under `data_cache/` (or `--cache-dir`):
+
+| Pattern | Symbols | Used by |
+|---------|---------|---------|
+| `{SYM}_1h_MASTER.csv` | BTCUSDT, ETHUSDT, SOLUSDT | all three SPA strategies |
+| `{SYM}_FUNDING_MASTER.csv` | same | `funding_rate_carry` |
+
+CSVs are **gitignored** (multi-MB; network access varies by reviewer).
+
+**The SPA script does NOT fetch data.** Pre-cache with the public helpers:
 
 ```python
-from quant_lib.core._data import fetch_with_retry
-fetch_with_retry("BTCUSDT", "1h", "2019-10-01", "2025-12-31")
-fetch_with_retry("ETHUSDT", "1h", "2019-10-01", "2025-12-31")
-fetch_with_retry("SOLUSDT", "1h", "2019-10-01", "2025-12-31")  # SOL perp data starts ~2020-09
+from quant_lib.tools.data import fetch_klines, fetch_funding
+
+for sym in ("BTCUSDT", "ETHUSDT", "SOLUSDT"):
+    start = "2020-01-01" if sym != "SOLUSDT" else "2021-01-01"
+    fetch_klines(sym, "1h", start, "2025-12-31")
+    fetch_funding(sym, "2021-01-01", "2025-12-31")
 ```
 
-The cached files are then placed in `data_cache/` (or wherever `--cache-dir`
-points).
+### Coverage vs `train_start=2021-07-01`
 
-### Why data starts at 2019-10-01 (cache) vs train_start 2021-07-01
+Experiments use **`train_start="2021-07-01"`**, **`min_age_days=180`**, and a
+**90-day** volume lookback. Preflight in `scripts/reproduce.py` requires 1h
+history back to at least **~2021-01-02** (stricter of age floor vs lookback).
+Earlier starts (e.g. BTC/ETH from 2020-01-01) are safer. Without coverage,
+preflight **exits non-zero before SPA** with the missing file/date named.
 
-Paper strategies use **`train_start="2021-07-01"`** (SOLUSDT age + lookback
-consistency across BTC/ETH/SOL). The framework's universe filter
-(`quant_lib.tools.universe.select_universe`) still needs a **90-day
-volume lookback** ending at `train_start`, so the cache must start
-**before** that window. Fetching from `2019-10-01` is a safe superset
-(also covers older exploratory ranges). Without enough history before
-`train_start`, symbols fail the filter and `run_explore` raises
-`CandidateError`. The reproduction script catches this upfront.
+Do **not** change `train_start` to paper-match numbers if the cache is short —
+extend the cache instead.
 
-**Workarounds** if you cannot pre-cache early history:
-- Ensure cache covers at least ~90 days before `2021-07-01` for each symbol
-- Only as last resort: change `train_start` in `quant_lib/experiments/*.py`
-  (that diverges from the paper sample, prefer fixing the cache)
+### Funding
+
+`funding_rate_carry` also needs funding masters. Missing
+`{SYM}_FUNDING_MASTER.csv` fails preflight when that strategy is selected.
 
 ## What the SPA script does NOT do
 
@@ -140,7 +146,7 @@ volume lookback** ending at `train_start`, so the cache must start
 ## Reviewer checklist
 
 1. Install dependencies: `pip install -e ".[dev]"`
-2. Pre-cache data (see "Data prerequisites" above) — SPA path only
+2. Pre-cache data (see "Data prerequisites" + `data_manifest.md`) — SPA path only
 3. Set `QUANT_LIB_HMAC_SECRET` (or let scripts auto-set a demo secret)
 4. Run `python scripts/reproduce_seal_demo.py` and confirm
    `output_seal_demo/results.json` has `"ok": true` (all steps pass)
@@ -158,7 +164,7 @@ message.
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
 | `RuntimeError: HMAC seal secret is not configured` | `QUANT_LIB_HMAC_SECRET` unset | The script auto-sets a default; if running directly, export the env var to any 32+ char string |
-| `CandidateError: No symbols passed universe selection` | Cached data starts too recently (see "Data prerequisites") | Pre-cache older data, or update `train_start` in experiment file |
+| `CandidateError: No symbols passed universe selection` | Cached data starts too recently (see "Data prerequisites") | Pre-cache earlier 1h/funding masters (see Data prerequisites); avoid changing paper train_start |
 | `ImportError: cannot import name '_imaging' from 'PIL'` | matplotlib/PIL version mismatch | Reinstall: `pip install --upgrade pillow matplotlib` |
 | Slow runtime (>1 hour) | Expected for full pipeline on slow hardware | Smoke-test one strategy first: `python scripts/reproduce.py --strategies vol_compression_v1` (same `n_spa_iters=2000`) |
 

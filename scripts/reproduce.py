@@ -93,80 +93,93 @@ def _check_data_coverage(
 ) -> list[str]:
     """Pre-flight check: verify cached data covers each strategy's needs.
 
-    The framework's universe filter requires a 90-day volume lookback
-    BEFORE each strategy's ``train_start``. The cached ``data_cache/``
-    CSV files have specific start dates -- if those dates are too
-    recent, every symbol fails the filter and the script produces
-    zero trades. This function catches that case BEFORE spending
-    an hour running ``run_explore``, and tells the reviewer exactly
-    which data is missing and where to get it.
+    Universe filters need (i) a volume lookback before ``train_start``
+    (90 days) and (ii) enough history for ``min_age_days`` (paper: 180).
+    Funding-rate experiments also need ``{sym}_FUNDING_MASTER.csv``.
+    Fail loud before ``run_explore``; do not fetch network data here.
 
     Returns a list of human-readable error messages (empty if all OK).
     """
     import pandas as pd
 
     errors: list[str] = []
-    # Load each experiment's required period.
     from quant_lib.experiments import get
+
+    def _csv_time_min(path: Path):
+        try:
+            df = pd.read_csv(path, usecols=["time"])
+        except (ValueError, KeyError, OSError) as e:
+            errors.append(f"cached CSV unreadable ({path}): {e}")
+            return None
+        ts = pd.to_datetime(df["time"], errors="coerce").dropna()
+        if ts.empty:
+            errors.append(f"cached CSV has no parseable timestamps ({path})")
+            return None
+        return ts.min()
+
     for name in strategies:
         try:
             exp = get(name)
         except KeyError:
-            # Already caught by the discovery check in main(); skip.
             continue
         train_start = exp.period.train_start
         lookback_end = pd.Timestamp(train_start)
-        lookback_start = lookback_end - pd.Timedelta(days=90)
+        min_age = int(getattr(exp.universe, "min_age_days", 0) or 0)
+        hist_days = max(90, min_age)
+        lookback_start = lookback_end - pd.Timedelta(days=hist_days)
+        needs_funding = "funding" in name.lower()
 
-        # Check each symbol's cached data.
         for sym in exp.universe.symbols:
-            csv_path = (
-                Path(cache_dir) / f"{sym}_1h_MASTER.csv"
-            )
+            csv_path = Path(cache_dir) / f"{sym}_1h_MASTER.csv"
             if not csv_path.exists():
                 errors.append(
-                    f"[{name}] symbol {sym}: cached data file missing "
-                    f"({csv_path}).\n"
-                    f"    The script does NOT fetch from the network -- "
-                    f"pre-cache manually via\n"
-                    f"    ``quant_lib.tools.data.prefetch_master_csv({sym!r}, ...)``\n"
-                    f"    before running this script."
+                    f"[{name}] symbol {sym}: 1h master missing ({csv_path}).\n"
+                    f"    Script does NOT fetch. Pre-cache with:\n"
+                    f"    from quant_lib.tools.data import fetch_klines\n"
+                    f"    fetch_klines({sym!r}, '1h', '2020-01-01', '2025-12-31')"
                 )
                 continue
-            try:
-                df = pd.read_csv(csv_path, usecols=["time"])
-            except (ValueError, KeyError) as e:
-                errors.append(
-                    f"[{name}] symbol {sym}: cached CSV unreadable: {e}"
-                )
+            cached_min = _csv_time_min(csv_path)
+            if cached_min is None:
                 continue
-            df["time"] = pd.to_datetime(df["time"], errors="coerce").dropna()
-            if df.empty:
+            if getattr(cached_min, "tzinfo", None) is not None:
+                cached_min = cached_min.tz_localize(None)
+            lb = lookback_start
+            if getattr(lb, "tzinfo", None) is not None:
+                lb = lb.tz_localize(None)
+            if cached_min > lb:
+                days_short = (cached_min - lb).days
                 errors.append(
-                    f"[{name}] symbol {sym}: cached CSV has no parseable "
-                    f"timestamps"
+                    f"[{name}] symbol {sym}: 1h data starts {cached_min.date()}, "
+                    f"need history from {lb.date()} or earlier "
+                    f"(train_start={lookback_end.date()}, "
+                    f"hist_days={hist_days} for volume lookback / min_age).\n"
+                    f"    Currently ~{days_short} days short. Pre-cache earlier "
+                    f"bars via quant_lib.tools.data.fetch_klines; do not change "
+                    f"train_start if you want paper-grade numbers."
                 )
-                continue
-            cached_min = df["time"].min()
-            # The 90-day lookback window before train_start needs at
-            # least 24 hourly bars (= 1 day minimum, but realistically
-            # the universe filter wants the full 90 days).
-            cached_lookback_coverage = (cached_min <= lookback_start)
-            if not cached_lookback_coverage:
-                # Compute how many days short we are.
-                days_short = (cached_min - lookback_start).days
-                errors.append(
-                    f"[{name}] symbol {sym}: cached data starts "
-                    f"{cached_min.date()}, but the universe filter needs "
-                    f"90-day volume lookback ending at {lookback_end.date()}.\n"
-                    f"    Need data from {lookback_start.date()} or earlier; "
-                    f"currently {days_short} days short.\n"
-                    f"    Fix: change ``train_start`` in "
-                    f"``quant_lib/experiments/{name}.py`` to a later date "
-                    f"(recommended: at least 3 months after cached data "
-                    f"starts), OR pre-cache additional data via the "
-                    f"data-fetch utilities in ``quant_lib/core/_data.py``."
-                )
+
+            if needs_funding:
+                fund_path = Path(cache_dir) / f"{sym}_FUNDING_MASTER.csv"
+                if not fund_path.exists():
+                    errors.append(
+                        f"[{name}] symbol {sym}: funding master missing "
+                        f"({fund_path}).\n"
+                        f"    Pre-cache with:\n"
+                        f"    from quant_lib.tools.data import fetch_funding\n"
+                        f"    fetch_funding({sym!r}, '2021-01-01', '2025-12-31')"
+                    )
+                    continue
+                fmin = _csv_time_min(fund_path)
+                if fmin is None:
+                    continue
+                if getattr(fmin, "tzinfo", None) is not None:
+                    fmin = fmin.tz_localize(None)
+                if fmin > lookback_end:
+                    errors.append(
+                        f"[{name}] symbol {sym}: funding data starts "
+                        f"{fmin.date()}, after train_start {lookback_end.date()}."
+                    )
     return errors
 
 
