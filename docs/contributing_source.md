@@ -3,9 +3,9 @@
 ## Table of Contents
 
 - [Development Setup](#development-setup)
-- [Code Style & Linting](#code-style--linting)
+- [Code Style & Linting](#code-style-linting)
 - [Testing](#testing)
-- [CI / GitHub Actions](#ci--github-actions)
+- [CI / GitHub Actions](#ci-github-actions)
 - [Adding a New Experiment](#adding-a-new-experiment)
 - [Adding a New Strategy](#adding-a-new-strategy)
 - [Making a Release](#making-a-release)
