@@ -52,6 +52,58 @@ pushes back with:
 See [docs/methodology.md](docs/methodology.md) for the full method
 writeup.
 
+## Installation
+
+**Requirements:** Python 3.10+
+
+PyPI package name is **`sealedge`**. Import name is still **`quant_lib`**.
+CLI entry point is **`quant_exp`**.
+
+### From PyPI (users)
+
+```bash
+pip install sealedge
+```
+
+Optional charts:
+
+```bash
+pip install "sealedge[viz]"
+```
+
+### From source (developers)
+
+```bash
+git clone https://github.com/Hansiongs/sealedge.git
+cd sealedge
+python -m venv .venv
+# Windows:  .venv\Scripts\activate
+# Linux/macOS: source .venv/bin/activate
+pip install -e ".[dev]"
+# optional: pip install -e ".[viz]"
+```
+
+### Required environment variable
+
+Any explore / commit / seal path needs an HMAC secret (min 32 characters):
+
+```bash
+# Linux/macOS
+export QUANT_LIB_HMAC_SECRET=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+
+# Windows PowerShell
+$env:QUANT_LIB_HMAC_SECRET = python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Optional:
+
+| Variable | Purpose |
+|---|---|
+| `QUANT_LIB_SEAL_DIR` | Seal file directory (default `data_cache/holdout_seals`) |
+
+Without `QUANT_LIB_HMAC_SECRET`, `quant_exp explore` / `run_explore` raises
+`RuntimeError` at seal create/verify.
+
 ## Quick Start
 
 ### 1. Use the Python API (recommended for notebooks)
@@ -341,20 +393,6 @@ opaque to coverage tooling.
   native code). Test behaviours, not lines.
 - `core/_data.py` requires network access to Binance Vision
   (mocked in tests)
-
-## Installation
-
-```bash
-# Clone the repo
-git clone https://github.com/Hansiongs/sealedge.git
-cd sealedge
-
-# Install with dev dependencies
-make install-dev
-
-# Or with pip
-pip install -e ".[dev]"
-```
 
 ## Citation
 
